@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from "react"
 import { createClient } from "@supabase/supabase-js"
+import logoImg from "@/imports/Screenshot_2026-06-09_151556-1.png"
 
 // ─── Brand Theme ─────────────────────────────────────────────────────────────
 const B = {
@@ -197,11 +198,9 @@ function Section({ title, icon, color, badge, expanded, onToggle, children }) {
         <span className="text-lg">{icon}</span>
         <span className="flex-1 font-bold text-sm uppercase tracking-wider" style={{ ...FH, color: B.indigo }}>{title}</span>
         {badge != null && <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full" style={{ background: color + "22", color, ...FB }}>{badge}</span>}
-        }
         <span className="text-gray-400">{expanded ? "▲" : "▼"}</span>
       </button>
       {expanded && <div className="bg-white border-t px-5 py-4 space-y-4" style={{ borderColor: "#f0eff9" }}>{children}</div>}
-      }
     </div>
   )
 }
@@ -380,7 +379,6 @@ function DepartmentSection({ departments, onChange, currentUser, triggerToast })
                 <div className="flex items-center gap-2">
                   <span className="font-extrabold text-indigo-950 text-base" style={{ ...FH }}>{dept.name}</span>
                   {dept.isLocked && <span className="bg-amber-100 text-amber-800 text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1">🔒 Locked</span>}
-                  }
                 </div>
 
                 <div className="flex items-center gap-2">
@@ -626,7 +624,6 @@ function AnnouncementsSection({ announcements, onChange, currentUser, triggerToa
               <div>
                 <div className="flex items-center gap-2 mb-1">
                   {a.isUrgent && <span className="bg-red-600 text-white text-[9px] font-extrabold px-1.5 py-0.5 rounded uppercase">Urgent</span>}
-                  }
                   <span className="font-bold text-xs">{a.postedBy}</span>
                   <span className="text-[10px] text-gray-400">{a.date}</span>
                 </div>
@@ -678,7 +675,6 @@ function EnhancedAdminPanel({ meeting, onUpdateMeeting, onSpawnWeek, triggerToas
             onChange={e => setPasswordInput(e.target.value)}
           />
           {passError && <p className="text-xs text-red-600 font-bold">Incorrect password. Please try again.</p>}
-          }
           <button type="submit" className="w-full bg-indigo-900 hover:bg-indigo-950 text-white font-bold py-2.5 rounded-xl text-xs uppercase tracking-wider">
             Unlock Admin Panel
           </button>
@@ -748,7 +744,7 @@ function EnhancedAdminPanel({ meeting, onUpdateMeeting, onSpawnWeek, triggerToas
                 <div className="font-semibold flex items-center gap-1 text-white">
                   {cfg.icon} {cfg.label}
                 </div>
-                <div className="text-2xl font-extrabold text-white mt-1" style={{ ...FH }}>{count}</div>
+                <div className="text-3xl font-extrabold mt-1" style={{ ...FH, color: B.gold }}>{count}</div>
               </div>
             )
           })}
@@ -786,7 +782,6 @@ function EnhancedAdminPanel({ meeting, onUpdateMeeting, onSpawnWeek, triggerToas
                     <span className="font-bold text-sm text-indigo-950" style={{ ...FB }}>{dept.name}</span>
                     <p className="text-xs text-gray-500 mt-0.5 line-clamp-2">
                       {dept.update ? dept.update : <span className="italic text-gray-400">No narrative report logged yet.</span>}
-                      }
                     </p>
                   </div>
                   <span className="text-xs font-bold px-2 py-0.5 rounded-full border whitespace-nowrap" style={{ background: currentSticker.bg, borderColor: currentSticker.border, color: currentSticker.text }}>
@@ -956,46 +951,76 @@ export default function ChezaChezaApp() {
       {toastMessage && <SuccessToast message={toastMessage} onClose={() => setToastMessage(null)} />}
 
       {!isEmailVerified ? (
-        <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-br from-indigo-950 via-indigo-900 to-purple-950 px-4 py-12 relative overflow-hidden">
-          <div className="bg-white/95 backdrop-blur-md p-8 sm:p-10 rounded-3xl shadow-2xl max-w-md w-full border border-white/20 text-center relative z-10 space-y-6">
-            <div>
-              <div className="w-16 h-16 bg-indigo-50 rounded-2xl mx-auto flex items-center justify-center border border-indigo-100 mb-3 text-indigo-700 shadow-sm text-2xl">
-                🌐
-              </div>
-              <h1 className="text-3xl text-indigo-950 tracking-wide" style={{ ...FH }}>ChezaCheza Dance</h1>
-              <p className="text-xs font-semibold text-indigo-700 uppercase tracking-widest mt-1" style={{ ...FB }}>
+        <div className="min-h-screen flex flex-col items-center justify-center px-4 py-12 relative overflow-hidden" style={{ background: B.indigo }}>
+          {/* Colour band across the top — echoes the logo letters */}
+          <div className="absolute top-0 left-0 right-0 h-2 flex">
+            <div className="flex-1" style={{ background: B.orange }} />
+            <div className="flex-1" style={{ background: B.teal }} />
+            <div className="flex-1" style={{ background: B.magenta }} />
+            <div className="flex-1" style={{ background: B.green }} />
+            <div className="flex-1" style={{ background: B.gold }} />
+            <div className="flex-1" style={{ background: B.red }} />
+          </div>
+
+          {/* Subtle background shapes */}
+          <div className="absolute top-16 right-0 w-64 h-64 rounded-full opacity-10" style={{ background: B.teal }} />
+          <div className="absolute bottom-8 left-0 w-48 h-48 rounded-full opacity-10" style={{ background: B.magenta }} />
+
+          <div className="bg-white p-8 sm:p-10 rounded-3xl shadow-2xl max-w-md w-full text-center relative z-10 space-y-6">
+            {/* Logo */}
+            <div className="flex flex-col items-center gap-3">
+              <img src={logoImg} alt="ChezaCheza Dance" className="h-14 w-auto object-contain" />
+              <div className="h-0.5 w-16 rounded-full" style={{ background: B.orange }} />
+              <p className="text-xs font-bold uppercase tracking-widest" style={{ color: B.indigo, ...FB }}>
                 MMM Internal Workspace Portal
               </p>
             </div>
 
             <form onSubmit={handleEmailSubmit} className="space-y-4 text-left">
               <div>
-                <label className="block text-xs font-bold text-gray-700 mb-1">Organization Email</label>
-                <div className="relative">
-                  <span className="absolute left-3 top-2.5 text-gray-400">✉️</span>
-                  <input
-                    type="email"
-                    placeholder="name@chezachezadance.org"
-                    className="w-full text-xs border border-gray-300 rounded-xl pl-9 pr-3 py-2.5 bg-white text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 font-medium"
-                    value={userEmail}
-                    onChange={e => setUserEmail(e.target.value)}
-                  />
-                </div>
+                <label className="block text-xs font-bold mb-1" style={{ color: B.indigo }}>Organization Email</label>
+                <input
+                  type="email"
+                  placeholder="name@chezachezadance.org"
+                  className="w-full text-sm border-2 rounded-xl px-4 py-2.5 bg-white text-gray-900 focus:outline-none font-medium transition-colors"
+                  style={{ borderColor: "#e4e2f4" }}
+                  onFocus={e => e.target.style.borderColor = B.teal}
+                  onBlur={e => e.target.style.borderColor = "#e4e2f4"}
+                  value={userEmail}
+                  onChange={e => setUserEmail(e.target.value)}
+                />
               </div>
 
               {emailError && (
-                <div className="bg-red-50 border border-red-200 text-red-700 p-2.5 rounded-xl text-xs font-semibold flex items-center gap-2">
-                  <span>⚠️</span> {emailError}
+                <div className="border p-2.5 rounded-xl text-xs font-semibold flex items-center gap-2" style={{ background: "#fff0ee", borderColor: B.red, color: B.red }}>
+                  <span>⚠</span> {emailError}
                 </div>
               )}
 
               <button
                 type="submit"
-                className="w-full bg-gradient-to-r from-indigo-700 to-indigo-900 hover:from-indigo-800 hover:to-indigo-950 text-white font-bold rounded-xl py-3 text-xs tracking-wider uppercase transition-all shadow-md flex items-center justify-center gap-2"
+                className="w-full text-white font-bold rounded-xl py-3 text-sm tracking-wider uppercase transition-all shadow-md"
+                style={{ background: B.teal }}
+                onMouseEnter={e => (e.currentTarget.style.background = "#009a9a")}
+                onMouseLeave={e => (e.currentTarget.style.background = B.teal)}
               >
-                <span>🚪</span> Verify Workspace Access
+                Enter Workspace
               </button>
             </form>
+
+            <p className="text-[11px] text-gray-400" style={{ ...FB }}>
+              Access is restricted to @chezachezadance.org email addresses
+            </p>
+          </div>
+
+          {/* Bottom colour band */}
+          <div className="absolute bottom-0 left-0 right-0 h-1.5 flex">
+            <div className="flex-1" style={{ background: B.red }} />
+            <div className="flex-1" style={{ background: B.gold }} />
+            <div className="flex-1" style={{ background: B.green }} />
+            <div className="flex-1" style={{ background: B.magenta }} />
+            <div className="flex-1" style={{ background: B.teal }} />
+            <div className="flex-1" style={{ background: B.orange }} />
           </div>
         </div>
       ) : (
