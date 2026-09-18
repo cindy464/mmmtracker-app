@@ -255,7 +255,6 @@ const STORAGE_KEY = "chezacheza_mmm_v13"
 const VERSION_KEY = "chezacheza_mmm_v13_version"
 const AUTO_SAVE_DEBOUNCE_MS = 600
 const SESSION_ID = sessionId()
-const AI_KEY_STORAGE = "chezacheza_anthropic_key"
 
 const MOOD_KEY = "chezachezadance_mood_v1"
 const MOODS = [
@@ -274,83 +273,83 @@ const SC: Record<string, { label: string; bg: string; border: string; text: stri
   protected:    { label: "Protected",    bg: "#eff6ff", border: "#3b82f6", text: "#1d4ed8", icon: "🛡️" },
 }
 
-// AI Assistant categories. "weekly" and "monthly" pull real meeting data;
-// the rest are general tips that don't need any meeting context.
+// AI Assistant categories. Each buildPrompt receives the same context object
+// so new categories can pull whatever data they need without changing the
+// call site. "currentUser" personalizes tone/attribution; department-scoped
+// categories ("weekly", "atrisk", "followup") read the real live data.
+type AIPromptCtx = { meeting: Meeting; meetings: Meeting[]; monthLabel: string; currentUser: string }
+
+function firstNameOf(email: string): string {
+  const raw = (email || "").split("@")[0].split(".")[0]
+  return raw ? raw.charAt(0).toUpperCase() + raw.slice(1) : "there"
+}
+
+function plainDeptLines(meeting: Meeting): string {
+  return meeting.departments.map(d => {
+    const acts = (d.actionItems || []).map(a => `    - [${a.status.toUpperCase()}] ${a.text || "(untitled)"}, owner: ${a.owner || "unassigned"}, due: ${a.deadline || "no date"}`).join("\n")
+    const plainUpdate = (d.update || "").replace(/<[^>]+>/g, " ").trim()
+    return `${d.name} (${(d.sticker || "pending").toUpperCase()})\n  Update: ${plainUpdate || "(no update)"}\n  Actions:\n${acts || "    (none)"}`
+  }).join("\n\n")
+}
+
 const AI_CATEGORIES = [
   {
     key: "wellness", label: "🌿 Wellness Tips", tagline: "Staff wellbeing and self-care ideas", color: B.green,
-    buildPrompt: () => "Share 3 meaningful wellness and self-care tips specifically for community development workers and programme staff who work in challenging environments in Nairobi. Include one physical, one mental, and one social tip. Keep it warm, practical, and encouraging.",
+    buildPrompt: (ctx: AIPromptCtx) => `Share 3 meaningful wellness and self-care tips for ${firstNameOf(ctx.currentUser)}, who works as community development staff in challenging environments in Nairobi. Include one physical, one mental, and one social tip. Address them warmly by name, keep it practical and encouraging.`,
   },
   {
     key: "management", label: "💡 Management Tips", tagline: "Practical leadership ideas for coordinators", color: B.indigo,
-    buildPrompt: () => "Give 3 practical, specific management tips for leaders of youth dance and community development programmes in informal urban settlements in Nairobi. Make them immediately actionable and grounded in the realities of NGO/community programme work. Write in clear, warm, professional English.",
+    buildPrompt: (ctx: AIPromptCtx) => `Give 3 practical, specific management tips for ${firstNameOf(ctx.currentUser)}, a leader of youth dance and community development programmes in informal urban settlements in Nairobi. Make them immediately actionable and grounded in the realities of NGO/community programme work. Address them by name, write in clear, warm, professional English.`,
   },
   {
     key: "nutrition", label: "🥗 Nutrition Tips", tagline: "Healthy eating for active staff", color: B.gold,
-    buildPrompt: () => "Give 3 practical, affordable nutrition tips for active community programme staff and youth workers in Nairobi. Consider local foods, budget constraints, and busy schedules. Keep it positive and realistic.",
+    buildPrompt: (ctx: AIPromptCtx) => `Give 3 practical, affordable nutrition tips for ${firstNameOf(ctx.currentUser)}, an active community programme worker in Nairobi. Consider local foods, budget constraints, and busy schedules. Address them by name, keep it positive and realistic.`,
   },
   {
     key: "weekly", label: "📋 Weekly Summary", tagline: "Executive brief of this week's updates", color: B.teal,
-    buildPrompt: (meeting: Meeting) => {
-      const lines = meeting.departments.map(d => {
-        const acts = (d.actionItems || []).map(a => `    - [${a.status.toUpperCase()}] ${a.text || "(untitled)"}, owner: ${a.owner || "unassigned"}`).join("\n")
-        const plainUpdate = (d.update || "").replace(/<[^>]+>/g, " ").trim()
-        return `${d.name} (${(d.sticker || "pending").toUpperCase()})\n  Update: ${plainUpdate || "(no update)"}\n  Actions:\n${acts || "    (none)"}`
-      }).join("\n\n")
-      return `You are an executive assistant summarising a Monthly Management Meeting (MMM) for ChezaCheza Dance Foundation, a youth dance organisation across Mathare, Kibera, and Eastlands, Nairobi.\n\nWeek ${meeting.weekNumber} department updates:\n\n${lines}\n\nWrite a concise 3-5 sentence executive summary for senior leadership. Highlight overall momentum, any departments at risk, and 1-2 wins. Professional tone, no bullet points.`
-    },
+    buildPrompt: (ctx: AIPromptCtx) => `You are an executive assistant summarising a Monthly Management Meeting (MMM) for ChezaCheza Dance Foundation, a youth dance organisation across Mathare, Kibera, and Eastlands, Nairobi. This summary is being prepared by ${firstNameOf(ctx.currentUser)}.\n\nWeek ${ctx.meeting.weekNumber} department updates:\n\n${plainDeptLines(ctx.meeting)}\n\nWrite a concise 3-5 sentence executive summary for senior leadership. Highlight overall momentum, any departments at risk, and 1-2 wins. Professional tone, no bullet points.`,
   },
   {
     key: "monthly", label: "🗓️ Monthly Report", tagline: "Detailed report combining every week this month", color: B.red,
-    buildPrompt: (meetings: Meeting[], monthLabel: string) => {
-      const lines = meetings.map(m => {
+    buildPrompt: (ctx: AIPromptCtx) => {
+      const lines = ctx.meetings.map(m => {
         const total = m.impactData.reduce((acc, c) => acc + c.hubs.reduce((h, hub) => h + sumHub(hub).total, 0), 0)
         const deptLines = m.departments.map(d => `  - ${d.name} (${(d.sticker || "pending").toUpperCase()}): ${(d.update || "").replace(/<[^>]+>/g, " ").trim() || "no update"}`).join("\n")
         return `Week ${m.weekNumber} (${m.date}), combined HUB attendance: ${total}\n${deptLines}`
       }).join("\n\n")
-      return `You are an executive assistant writing a detailed MONTHLY report for ChezaCheza Dance Foundation, covering ${monthLabel}, combining every weekly log logged that month below.\n\n${lines}\n\nWrite a well-structured monthly report for the board: overall attendance trend across the weeks, standout wins, departments needing support, and 2-3 concrete recommendations for next month. Use short headed sections, not one long paragraph.`
+      return `You are an executive assistant writing a detailed MONTHLY report for ChezaCheza Dance Foundation, covering ${ctx.monthLabel}, prepared by ${firstNameOf(ctx.currentUser)}, combining every weekly log logged that month below.\n\n${lines}\n\nWrite a well-structured monthly report for the board: overall attendance trend across the weeks, standout wins, departments needing support, and 2-3 concrete recommendations for next month. Use short headed sections, not one long paragraph.`
     },
+  },
+  {
+    key: "donor", label: "💌 Donor Update Email", tagline: "Funder-ready update drafted from this week's data", color: B.magenta,
+    buildPrompt: (ctx: AIPromptCtx) => `Draft a warm, professional donor/funder update email for ChezaCheza Dance Foundation, from ${firstNameOf(ctx.currentUser)}. Base it on this week's real programme data below — use specific numbers and wins, not generic language.\n\nWeek ${ctx.meeting.weekNumber} department updates:\n\n${plainDeptLines(ctx.meeting)}\n\nWrite a complete email: greeting, 2-3 short paragraphs of real impact and momentum, and a warm closing. Keep it under 250 words, no bullet points, ready to send with minimal editing.`,
+  },
+  {
+    key: "agenda", label: "🗂️ Meeting Agenda", tagline: "Turn this week's updates into a ready-to-run agenda", color: B.teal,
+    buildPrompt: (ctx: AIPromptCtx) => `Turn this week's department updates into a ready-to-run Monthly Management Meeting agenda for ChezaCheza Dance Foundation, for ${firstNameOf(ctx.currentUser)} to lead.\n\nWeek ${ctx.meeting.weekNumber} department updates:\n\n${plainDeptLines(ctx.meeting)}\n\nWrite a numbered agenda: lead with any at-risk departments first, then wins, then open action items needing discussion, then any other business. Give a rough time allocation per item assuming a 45-minute meeting.`,
+  },
+  {
+    key: "atrisk", label: "⚠️ At-Risk Flag", tagline: "Which departments need attention before the meeting", color: B.red,
+    buildPrompt: (ctx: AIPromptCtx) => `Review this week's department data for ChezaCheza Dance Foundation and flag what actually needs attention, for ${firstNameOf(ctx.currentUser)} ahead of the meeting.\n\nWeek ${ctx.meeting.weekNumber} department updates:\n\n${plainDeptLines(ctx.meeting)}\n\nList only departments with a genuine concern — an "At Risk" sticker, an overdue-sounding or vague action item, or a missing update. For each, say specifically what looks off and one suggested question to ask in the meeting. If nothing looks concerning, say so plainly rather than inventing a concern.`,
+  },
+  {
+    key: "recognition", label: "🌟 Recognition Message", tagline: "Draft a thank-you for a standout update", color: B.gold,
+    buildPrompt: (ctx: AIPromptCtx) => `Look at this week's department updates for ChezaCheza Dance Foundation and find the most genuine win or standout effort worth recognizing. Written for ${firstNameOf(ctx.currentUser)} to send.\n\nWeek ${ctx.meeting.weekNumber} department updates:\n\n${plainDeptLines(ctx.meeting)}\n\nDraft a short, warm recognition message (3-4 sentences) to the team or person behind that update, specific to what they actually did — not generic praise. If nothing stands out clearly, say so rather than inventing one.`,
+  },
+  {
+    key: "followup", label: "🔔 Overdue Follow-Up", tagline: "One list of everything that needs chasing", color: B.indigo,
+    buildPrompt: (ctx: AIPromptCtx) => `Review this week's action items across all departments for ChezaCheza Dance Foundation and build one consolidated follow-up list, for ${firstNameOf(ctx.currentUser)} to send out.\n\nWeek ${ctx.meeting.weekNumber} department updates:\n\n${plainDeptLines(ctx.meeting)}\n\nList every action item that is not marked accomplished, grouped by owner, with its department and deadline. Write it as a short, direct message ready to paste into chat — one line per item, no preamble.`,
   },
 ]
 
-// Streams a Claude response directly from the browser using the caller's own
-// API key. No SDK needed — this is the same mechanism the SDK uses under the
-// hood when given dangerouslyAllowBrowser, just called directly over fetch.
-async function streamClaude(apiKey: string, prompt: string, onDelta: (chunk: string) => void) {
-  const res = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      "x-api-key": apiKey,
-      "anthropic-version": "2023-06-01",
-      "anthropic-dangerous-direct-browser-access": "true",
-    },
-    body: JSON.stringify({ model: "claude-opus-5", max_tokens: 800, stream: true, messages: [{ role: "user", content: prompt }] }),
-  })
-  if (!res.ok || !res.body) {
-    const text = await res.text().catch(() => "")
-    throw new Error(`${res.status} ${text || res.statusText}`)
-  }
-  const reader = res.body.getReader()
-  const decoder = new TextDecoder()
-  let buf = ""
-  while (true) {
-    const { value, done } = await reader.read()
-    if (done) return
-    buf += decoder.decode(value, { stream: true })
-    const lines = buf.split("\n")
-    buf = lines.pop() || ""
-    for (const line of lines) {
-      const trimmed = line.trim()
-      if (!trimmed.startsWith("data:")) continue
-      const payload = trimmed.slice(5).trim()
-      if (payload === "[DONE]") return
-      try {
-        const evt = JSON.parse(payload)
-        if (evt.type === "content_block_delta" && evt.delta?.type === "text_delta") onDelta(evt.delta.text)
-      } catch { /* ignore partial frame */ }
-    }
-  }
+// Calls the ai-assistant Edge Function (Gemini, server-side key) instead of
+// talking to a model API directly from the browser — the key never reaches
+// the client, and the function only accepts the fixed categories above.
+async function callAIAssistant(category: string, prompt: string): Promise<string> {
+  const { data, error } = await supabase.functions.invoke("ai-assistant", { body: { category, prompt } })
+  if (error) throw new Error(error.message || "AI request failed")
+  if (data?.error) throw new Error(data.error)
+  return data?.text || ""
 }
 
 function createMeeting(wk: number, defs: typeof DEFAULT_DEPTS, dateStr?: string): Meeting {
@@ -1022,11 +1021,8 @@ function TeamChatSection({ messages, onChange, currentUser, triggerToast }: {
   )
 }
 
-function AISummaryPanel({ meeting, root, onClose }: { meeting: Meeting; root: Root; onClose: () => void }) {
+function AISummaryPanel({ meeting, root, currentUser, onClose }: { meeting: Meeting; root: Root; currentUser: string; onClose: () => void }) {
   const [activeKey, setActiveKey] = useState("weekly")
-  const [apiKey, setApiKey] = useState(() => { try { return localStorage.getItem(AI_KEY_STORAGE) || "" } catch { return "" } })
-  const [showSettings, setShowSettings] = useState(false)
-  const [keyInput, setKeyInput] = useState("")
   const [response, setResponse] = useState("")
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState("")
@@ -1037,28 +1033,14 @@ function AISummaryPanel({ meeting, root, onClose }: { meeting: Meeting; root: Ro
   const inMonthMeetings = meetingsInSameMonth(root.meetings, meeting.date)
   const monthLabel = new Date(meeting.date + "T00:00:00").toLocaleDateString("en-US", { month: "long", year: "numeric" })
 
-  function saveKey() {
-    const k = keyInput.trim()
-    if (!k) return
-    try { localStorage.setItem(AI_KEY_STORAGE, k) } catch { /* noop */ }
-    setApiKey(k); setKeyInput(""); setShowSettings(false); setError("")
-  }
-
   async function generate() {
-    if (!apiKey) { setShowSettings(true); return }
     setLoading(true); setResponse(""); setError("")
     try {
-      const prompt =
-        activeCat.key === "monthly" ? (activeCat.buildPrompt as any)(inMonthMeetings, monthLabel) :
-        activeCat.key === "weekly" ? (activeCat.buildPrompt as any)(meeting) :
-        (activeCat.buildPrompt as any)()
-      await streamClaude(apiKey, prompt, chunk => setResponse(prev => prev + chunk))
+      const prompt = activeCat.buildPrompt({ meeting, meetings: inMonthMeetings, monthLabel, currentUser })
+      const text = await callAIAssistant(activeCat.key, prompt)
+      setResponse(text)
     } catch (err: any) {
-      setError(
-        err?.message?.includes("401") || err?.message?.includes("authentication_error")
-          ? "API key invalid or expired, check it in Settings below."
-          : `Something went wrong: ${err?.message || "unknown error"}`
-      )
+      setError(`Something went wrong: ${err?.message || "unknown error"}`)
     } finally {
       setLoading(false)
     }
@@ -1100,7 +1082,7 @@ function AISummaryPanel({ meeting, root, onClose }: { meeting: Meeting; root: Ro
               className="text-xs font-bold px-5 py-2.5 rounded-xl text-white flex items-center gap-2 transition-all disabled:opacity-60"
               style={{ background: loading ? activeCat.color + "88" : activeCat.color }}
             >
-              {loading ? <><span className="animate-spin inline-block">⟳</span> Thinking…</> : <>✨ Ask Claude</>}
+              {loading ? <><span className="animate-spin inline-block">⟳</span> Thinking…</> : <>✨ Generate</>}
             </button>
             {response && !loading && (
               <button onClick={generate} className="text-xs underline" style={{ color: activeCat.color }}>Regenerate</button>
@@ -1112,40 +1094,10 @@ function AISummaryPanel({ meeting, root, onClose }: { meeting: Meeting; root: Ro
           )}
 
           {(response || loading) && (
-            <div className="rounded-xl p-4 text-sm leading-relaxed border bg-white" style={{ borderColor: activeCat.color + "30", color: "#1a2340", ...FB }}>
+            <div className="rounded-xl p-4 text-sm leading-relaxed border bg-white whitespace-pre-wrap" style={{ borderColor: activeCat.color + "30", color: "#1a2340", ...FB }}>
               {response || <span className="text-gray-400 italic text-xs">Writing…</span>}
-              {loading && response && <span className="animate-pulse" style={{ color: activeCat.color }}>▍</span>}
             </div>
           )}
-
-          <div className="pt-1 border-t border-gray-100">
-            <button onClick={() => setShowSettings(s => !s)} className="text-[11px] text-gray-400 hover:text-gray-600 flex items-center gap-1">
-              ⚙ {apiKey ? "API key saved" : "Connect API key"} {showSettings ? "▲" : "▼"}
-            </button>
-
-            {showSettings && (
-              <div className="mt-2 p-3 rounded-xl border space-y-2 bg-white" style={{ borderColor: "#e0dff5" }}>
-                <p className="text-[11px] text-gray-500">Your Anthropic API key. Stored only in this browser, sent directly to Anthropic.</p>
-                <div className="flex gap-2">
-                  <input
-                    type="password"
-                    placeholder="sk-ant-..."
-                    className="flex-1 text-xs border border-gray-300 rounded-lg px-3 py-2 bg-white focus:outline-none font-mono"
-                    value={keyInput}
-                    onChange={e => setKeyInput(e.target.value)}
-                    onKeyDown={e => e.key === "Enter" && saveKey()}
-                  />
-                  <button onClick={saveKey} className="text-xs font-bold px-4 py-2 rounded-lg text-white" style={{ background: B.red }}>Save</button>
-                  {apiKey && (
-                    <button
-                      onClick={() => { try { localStorage.removeItem(AI_KEY_STORAGE) } catch { /* noop */ }; setApiKey(""); setResponse("") }}
-                      className="text-xs text-gray-400 hover:text-red-500 px-2"
-                    >Clear</button>
-                  )}
-                </div>
-              </div>
-            )}
-          </div>
         </div>
       )}
       </div>
@@ -2167,7 +2119,7 @@ export default function ChezaChezaApp() {
     <div className="min-h-screen pb-20 relative" style={{ ...FB, background: B.cream }}>
       <style>{FONT_IMPORT}</style>
       {toastMessage && <SuccessToast message={toastMessage} onClose={() => setToastMessage(null)} />}
-      {showAI && <AISummaryPanel meeting={activeMeeting} root={root} onClose={() => setShowAI(false)} />}
+      {showAI && <AISummaryPanel meeting={activeMeeting} root={root} currentUser={userEmail} onClose={() => setShowAI(false)} />}
 
       {!isEmailVerified ? (
         <div className="min-h-screen flex flex-col items-center justify-center px-4 py-12 relative overflow-hidden" style={{ background: B.cream }}>
