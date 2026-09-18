@@ -55,7 +55,17 @@ const FM: React.CSSProperties = { fontFamily: "monospace" }
 // playful accent in the app chrome (header, landing page) per explicit request.
 const FN: React.CSSProperties = { fontFamily: "'Baloo 2', cursive" }
 
-const FONT_IMPORT = `@import url('https://fonts.googleapis.com/css2?family=Ranchers&family=Baloo+2:wght@400;500;600;700;800&family=Noto+Sans:wght@400;500;600;700;800;900&display=swap'); .rich-text-edit:empty::before{content:attr(data-placeholder);color:#9ca3af;pointer-events:none;} .rich-text-edit ol{list-style:decimal;margin-left:1.2em;padding-left:0.5em;} .rich-text-edit ul{list-style:disc;margin-left:1.2em;padding-left:0.5em;} .rich-text-edit li{display:list-item;}`
+const FONT_IMPORT = `@import url('https://fonts.googleapis.com/css2?family=Ranchers&family=Baloo+2:wght@400;500;600;700;800&family=Noto+Sans:wght@400;500;600;700;800;900&family=Quicksand:wght@400;500;600;700&family=Comic+Neue:wght@400;700&display=swap'); .rich-text-edit:empty::before{content:attr(data-placeholder);color:#9ca3af;pointer-events:none;} .rich-text-edit ol{list-style:decimal;margin-left:1.2em;padding-left:0.5em;} .rich-text-edit ul{list-style:disc;margin-left:1.2em;padding-left:0.5em;} .rich-text-edit li{display:list-item;}`
+
+// Narration-box font picker. "Google Sans" and literal "Comic Sans" aren't
+// licensed for free web embedding (not on Google Fonts) — Quicksand and
+// Comic Neue are the closest genuinely-available equivalents in that spirit.
+const NARRATION_FONTS = [
+  { label: "Noto Sans", value: "'Noto Sans', sans-serif" },
+  { label: "Baloo 2", value: "'Baloo 2', cursive" },
+  { label: "Quicksand", value: "'Quicksand', sans-serif" },
+  { label: "Comic Neue", value: "'Comic Neue', cursive" },
+]
 
 // Helper utilities
 function uid(): string { return Math.random().toString(36).slice(2) + Date.now().toString(36) }
@@ -574,14 +584,23 @@ function RichTextEditor({ value, onChange, disabled, placeholder }: {
   value: string; onChange: (html: string) => void; disabled: boolean; placeholder: string
 }) {
   const ref = useRef<HTMLDivElement>(null)
+  const isFocusedRef = useRef(false)
   const [showColors, setShowColors] = useState(false)
   const [showHighlights, setShowHighlights] = useState(false)
+  const [showFonts, setShowFonts] = useState(false)
 
+  // Only overwrite the live DOM from the incoming value when this device
+  // isn't the one currently typing here. Without the focus guard, a
+  // teammate's realtime edit landing mid-keystroke would yank the cursor
+  // and clobber whatever you were typing. This is also what makes another
+  // person's narration edits actually appear on your screen live — the old
+  // version only re-synced when `disabled` changed, never when `value` did,
+  // so incoming edits saved correctly but never visibly showed up remotely.
   useEffect(() => {
-    if (ref.current && ref.current.innerHTML !== value) {
+    if (ref.current && !isFocusedRef.current && ref.current.innerHTML !== value) {
       ref.current.innerHTML = value || ""
     }
-  }, [disabled])
+  }, [value, disabled])
 
   function exec(cmd: string, val?: string) {
     ref.current?.focus()
@@ -589,6 +608,7 @@ function RichTextEditor({ value, onChange, disabled, placeholder }: {
     if (ref.current) onChange(ref.current.innerHTML)
     setShowColors(false)
     setShowHighlights(false)
+    setShowFonts(false)
   }
 
   const btnBase = "px-2 py-1 rounded text-xs font-bold border border-gray-200 hover:bg-indigo-50 transition-colors"
@@ -599,10 +619,21 @@ function RichTextEditor({ value, onChange, disabled, placeholder }: {
         <div className="flex items-center gap-1 mb-1.5 pb-1.5 border-b border-gray-100 flex-wrap">
           <button type="button" onMouseDown={e => { e.preventDefault(); exec("bold") }} className={btnBase} style={{ fontWeight: 800 }}>B</button>
           <button type="button" onMouseDown={e => { e.preventDefault(); exec("italic") }} className={btnBase} style={{ fontStyle: "italic" }}>I</button>
+          <button type="button" onMouseDown={e => { e.preventDefault(); exec("underline") }} className={btnBase} style={{ textDecoration: "underline" }}>U</button>
           <button type="button" onMouseDown={e => { e.preventDefault(); exec("insertOrderedList") }} className={btnBase}>1.</button>
           <button type="button" onMouseDown={e => { e.preventDefault(); exec("insertUnorderedList") }} className={btnBase}>•</button>
           <div className="relative">
-            <button type="button" onMouseDown={e => { e.preventDefault(); setShowColors(!showColors); setShowHighlights(false) }} className={btnBase}>🎨 Color</button>
+            <button type="button" onMouseDown={e => { e.preventDefault(); setShowFonts(!showFonts); setShowColors(false); setShowHighlights(false) }} className={btnBase}>🔤 Font</button>
+            {showFonts && (
+              <div className="absolute z-30 top-full left-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-xl p-1.5 flex flex-col gap-1 w-40">
+                {NARRATION_FONTS.map(f => (
+                  <button key={f.value} type="button" onMouseDown={e => { e.preventDefault(); exec("fontName", f.value) }} className="text-left px-2 py-1.5 rounded hover:bg-indigo-50 text-xs" style={{ fontFamily: f.value }}>{f.label}</button>
+                ))}
+              </div>
+            )}
+          </div>
+          <div className="relative">
+            <button type="button" onMouseDown={e => { e.preventDefault(); setShowColors(!showColors); setShowHighlights(false); setShowFonts(false) }} className={btnBase}>🎨 Color</button>
             {showColors && (
               <div className="absolute z-30 top-full left-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-xl p-2 flex gap-1 flex-wrap w-48">
                 {TEXT_COLORS.map(c => (
@@ -612,7 +643,7 @@ function RichTextEditor({ value, onChange, disabled, placeholder }: {
             )}
           </div>
           <div className="relative">
-            <button type="button" onMouseDown={e => { e.preventDefault(); setShowHighlights(!showHighlights); setShowColors(false) }} className={btnBase}>🖍️ Highlight</button>
+            <button type="button" onMouseDown={e => { e.preventDefault(); setShowHighlights(!showHighlights); setShowColors(false); setShowFonts(false) }} className={btnBase}>🖍️ Highlight</button>
             {showHighlights && (
               <div className="absolute z-30 top-full left-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-xl p-2 flex gap-1 flex-wrap w-48">
                 {HIGHLIGHT_COLORS.map(c => (
@@ -628,9 +659,11 @@ function RichTextEditor({ value, onChange, disabled, placeholder }: {
         ref={ref}
         contentEditable={!disabled}
         onInput={() => ref.current && onChange(ref.current.innerHTML)}
+        onFocus={() => { isFocusedRef.current = true }}
+        onBlur={() => { isFocusedRef.current = false }}
         suppressContentEditableWarning
         data-placeholder={placeholder}
-        className={`w-full text-sm border rounded-xl p-3 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 ${disabled ? "bg-gray-50 text-gray-500" : "bg-white"} min-h-[80px] rich-text-edit`}
+        className={`w-full text-sm border rounded-xl p-3 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 ${disabled ? "bg-gray-50 text-gray-500" : "bg-white"} min-h-[120px] rich-text-edit`}
         style={{ borderColor: "#d1d5db", ...FB }}
       />
     </div>
@@ -1209,20 +1242,35 @@ function DepartmentSection({ departments, onChange, currentUser, triggerToast, m
     }
   }
 
+  const anyCollapsed = departments.some(d => d.expanded === false)
+
   return (
     <Section title="Departmental Updates & Action Items" icon="📋" color={B.indigo} expanded={exp} onToggle={() => setExp(!exp)}>
+      <div className="flex justify-end">
+        <button
+          onClick={() => onChange(departments.map(d => ({ ...d, expanded: anyCollapsed })))}
+          className="text-xs font-bold text-indigo-700 hover:text-indigo-900 bg-indigo-50 hover:bg-indigo-100 px-3 py-1.5 rounded-lg border border-indigo-200 transition-all hover:scale-105 mb-1"
+        >
+          {anyCollapsed ? "⬇️ Expand All" : "⬆️ Collapse All"}
+        </button>
+      </div>
       <div className="space-y-6">
         {departments.map(dept => {
           const currentSticker = SC[dept.sticker || "pending"]
           const regionName = REGION_COMMUNITY_MAP[dept.id]
           const community = regionName ? impactData.find(c => c.name === regionName) || null : null
           const accentColor = community ? community.color : (DEPT_COLORS[dept.id] || B.indigo)
+          const isExpanded = dept.expanded !== false
 
           return (
             <React.Fragment key={dept.id}>
             <div className="border rounded-2xl p-4 bg-white shadow-sm space-y-3 transition-all hover:shadow-md hover:-translate-y-0.5" style={{ borderColor: "#e5e7eb", borderLeftWidth: 4, borderLeftColor: accentColor, borderRightWidth: 4, borderRightColor: accentColor }}>
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-gray-100 pb-3">
+              <button
+                onClick={() => updateDept(dept.id, { expanded: !isExpanded })}
+                className={`w-full flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-left ${isExpanded ? "border-b border-gray-100 pb-3" : ""}`}
+              >
                 <div className="flex items-center gap-2">
+                  <span className="text-gray-400 text-xs">{isExpanded ? "▼" : "▶"}</span>
                   {DEPT_ILLUSTRATED_ICONS[dept.id] ? <img src={DEPT_ILLUSTRATED_ICONS[dept.id]} className="w-5 h-5 object-contain" alt="" /> : <span className="text-lg">{dept.iconKey}</span>}
                   <span className="font-extrabold text-indigo-950 text-base" style={{ ...FH }}>{dept.name}</span>
                   {dept.isLocked && <span className="bg-amber-100 text-amber-800 text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1">🔒 Locked</span>}
@@ -1233,12 +1281,18 @@ function DepartmentSection({ departments, onChange, currentUser, triggerToast, m
                   <span className="text-xs font-bold px-2.5 py-1 rounded-lg border flex items-center gap-1" style={{ background: currentSticker.bg, borderColor: currentSticker.border, color: currentSticker.text }}>
                     {currentSticker.icon} {currentSticker.label}
                   </span>
-                  <button onClick={() => handleLockToggle(dept)} className="p-1.5 hover:bg-gray-100 rounded-lg text-gray-400 hover:text-gray-700 transition-all hover:scale-110" title={dept.isLocked ? "Unlock section" : "Lock section with PIN"}>
+                  <span
+                    onClick={e => { e.stopPropagation(); handleLockToggle(dept) }}
+                    className="p-1.5 hover:bg-gray-100 rounded-lg text-gray-400 hover:text-gray-700 transition-all hover:scale-110 cursor-pointer"
+                    title={dept.isLocked ? "Unlock section" : "Lock section with PIN"}
+                  >
                     {dept.isLocked ? <span className="text-amber-600">🔒</span> : <span>🔓</span>}
-                  </button>
+                  </span>
                 </div>
-              </div>
+              </button>
 
+              {isExpanded && (
+              <>
               {/* Inline program counters for specific departments */}
               {dept.id === "happy" && (
                 <div className="flex items-center gap-3 p-3 rounded-xl border" style={{ background: "rgba(236, 72, 153, 0.08)", borderColor: "rgba(236, 72, 153, 0.3)" }}>
@@ -1346,6 +1400,8 @@ function DepartmentSection({ departments, onChange, currentUser, triggerToast, m
                   })}
                 </div>
               </div>
+              </>
+              )}
             </div>
             {dept.id === "comm-lead" && (
               <ImpactSection impactData={impactData} numbersLocked={meeting.numbersLocked} />
@@ -2149,7 +2205,7 @@ export default function ChezaChezaApp() {
                 <div>
                   <label className="block text-xs font-bold mb-1" style={{ color: B.indigo }}>6-Digit Code</label>
                   <p className="text-[11px] text-gray-400 mb-2">Sent to {loginEmail.trim().toLowerCase()} — check your inbox (and spam folder).</p>
-                  <input type="text" inputMode="numeric" placeholder="123456" maxLength={6} className="w-full text-lg tracking-[0.4em] text-center border-2 rounded-xl px-4 py-2.5 bg-white text-gray-900 focus:outline-none font-bold transition-colors" style={{ borderColor: "#e4e2f4" }} onFocus={e => e.target.style.borderColor = B.teal} onBlur={e => e.target.style.borderColor = "#e4e2f4"} value={otpCode} onChange={e => setOtpCode(e.target.value.replace(/\D/g, ""))} />
+                  <input type="text" inputMode="numeric" autoComplete="one-time-code" placeholder="123456" maxLength={6} className="w-full text-lg tracking-[0.4em] text-center border-2 rounded-xl px-4 py-2.5 bg-white text-gray-900 focus:outline-none font-bold transition-colors" style={{ borderColor: "#e4e2f4" }} onFocus={e => e.target.style.borderColor = B.teal} onBlur={e => e.target.style.borderColor = "#e4e2f4"} value={otpCode} onChange={e => setOtpCode(e.target.value.replace(/\D/g, ""))} />
                 </div>
                 {emailError && <div className="border p-2.5 rounded-xl text-xs font-semibold flex items-center gap-2" style={{ background: "#fff0ee", borderColor: B.red, color: B.red }}><span>⚠</span> {emailError}</div>}
                 <button type="submit" disabled={authLoading || otpCode.length < 6} className="w-full text-white font-bold rounded-full py-3 text-sm tracking-wider uppercase transition-all shadow-md hover:brightness-105 disabled:opacity-50" style={{ background: B.magenta, ...FH }}>{authLoading ? "Verifying..." : "Enter Workspace"}</button>
