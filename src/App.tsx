@@ -345,11 +345,11 @@ const AI_CATEGORIES = [
 // Calls the ai-assistant Edge Function (Gemini, server-side key) instead of
 // talking to a model API directly from the browser — the key never reaches
 // the client, and the function only accepts the fixed categories above.
-async function callAIAssistant(category: string, prompt: string): Promise<string> {
+async function callAIAssistant(category: string, prompt: string): Promise<{ text: string; truncated: boolean }> {
   const { data, error } = await supabase.functions.invoke("ai-assistant", { body: { category, prompt } })
   if (error) throw new Error(error.message || "AI request failed")
   if (data?.error) throw new Error(data.error)
-  return data?.text || ""
+  return { text: data?.text || "", truncated: !!data?.truncated }
 }
 
 function createMeeting(wk: number, defs: typeof DEFAULT_DEPTS, dateStr?: string): Meeting {
@@ -906,6 +906,31 @@ function MainCounterSection({ meeting, impactData }: {
   )
 }
 
+// Deterministic colored-initials avatar — no upload/storage needed, every
+// teammate gets a consistent, recognizable identity across the app just from
+// their email.
+const AVATAR_COLORS = [B.indigo, B.teal, B.magenta, B.red, B.green, B.gold]
+function avatarColorFor(email: string): string {
+  let hash = 0
+  for (let i = 0; i < email.length; i++) hash = (hash * 31 + email.charCodeAt(i)) >>> 0
+  return AVATAR_COLORS[hash % AVATAR_COLORS.length]
+}
+function initialsFor(email: string): string {
+  const name = (email || "").split("@")[0].split(".")[0]
+  return name.slice(0, 2).toUpperCase() || "?"
+}
+function Avatar({ email, size = 28 }: { email: string; size?: number }) {
+  return (
+    <div
+      className="rounded-full flex items-center justify-center text-white font-bold flex-none"
+      style={{ width: size, height: size, background: avatarColorFor(email), fontSize: size * 0.4, ...FH }}
+      title={email}
+    >
+      {initialsFor(email)}
+    </div>
+  )
+}
+
 function TeamChatSection({ messages, onChange, currentUser, triggerToast }: {
   messages: ChatMessage[]; onChange: (msgs: ChatMessage[]) => void; currentUser: string; triggerToast: (m: string) => void
 }) {
@@ -988,20 +1013,23 @@ function TeamChatSection({ messages, onChange, currentUser, triggerToast }: {
           const renderedText = msg.text.replace(/(@[\w.]+@chezachezadance\.org)/gi, '<span style="font-weight:700;color:#3b82f6">$1</span>')
           const hearted = msg.heartedBy.includes(currentUser)
           return (
-            <div key={msg.id} className={`flex flex-col ${isMe ? "items-end" : "items-start"}`}>
-              <div className={`max-w-[85%] rounded-xl px-3 py-2 text-xs ${isMe ? "bg-indigo-700 text-white" : "bg-gray-50 border border-gray-200 text-gray-900"}`} style={{ ...FB }}>
-                {!isMe && <div className="text-[10px] font-bold text-indigo-600 mb-0.5">{senderDisplay}</div>}
-                <div dangerouslySetInnerHTML={{ __html: renderedText }} />
-                <div className={`text-[9px] mt-1 ${isMe ? "text-indigo-300" : "text-gray-400"}`}>{formatTime(msg.timestamp)}{msg.mentionedEmails.length > 0 && " · pinged"}</div>
-              </div>
-              <div className="flex items-center gap-1 mt-0.5">
-                <button onClick={() => toggleHeart(msg.id)} className="flex items-center gap-1 px-1.5 py-0.5 rounded-full hover:bg-rose-50 transition-all">
-                  <img src={heartIcon} className="w-3.5 h-3.5 object-contain transition-transform" style={{ opacity: hearted ? 1 : 0.35, transform: hearted ? "scale(1.15)" : "scale(1)" }} alt="heart" />
-                  {msg.heartedBy.length > 0 && <span className="text-[9px] font-bold text-rose-500">{msg.heartedBy.length}</span>}
-                </button>
-                {isMe && (
-                  <button onClick={() => deleteMessage(msg.id)} className="text-gray-300 hover:text-red-500 px-1 py-0.5 rounded-full hover:bg-red-50 transition-all text-[11px]" title="Delete message">🗑️</button>
-                )}
+            <div key={msg.id} className={`flex items-end gap-2 ${isMe ? "flex-row-reverse" : "flex-row"}`}>
+              <Avatar email={msg.sender} size={26} />
+              <div className={`flex flex-col ${isMe ? "items-end" : "items-start"}`}>
+                <div className={`max-w-[85%] rounded-xl px-3 py-2 text-xs ${isMe ? "bg-indigo-700 text-white" : "bg-gray-50 border border-gray-200 text-gray-900"}`} style={{ ...FB }}>
+                  {!isMe && <div className="text-[10px] font-bold text-indigo-600 mb-0.5">{senderDisplay}</div>}
+                  <div dangerouslySetInnerHTML={{ __html: renderedText }} />
+                  <div className={`text-[9px] mt-1 ${isMe ? "text-indigo-300" : "text-gray-400"}`}>{formatTime(msg.timestamp)}{msg.mentionedEmails.length > 0 && " · pinged"}</div>
+                </div>
+                <div className="flex items-center gap-1 mt-0.5">
+                  <button onClick={() => toggleHeart(msg.id)} className="flex items-center gap-1 px-1.5 py-0.5 rounded-full hover:bg-rose-50 transition-all">
+                    <img src={heartIcon} className="w-3.5 h-3.5 object-contain transition-transform" style={{ opacity: hearted ? 1 : 0.35, transform: hearted ? "scale(1.15)" : "scale(1)" }} alt="heart" />
+                    {msg.heartedBy.length > 0 && <span className="text-[9px] font-bold text-rose-500">{msg.heartedBy.length}</span>}
+                  </button>
+                  {isMe && (
+                    <button onClick={() => deleteMessage(msg.id)} className="text-gray-300 hover:text-red-500 px-1 py-0.5 rounded-full hover:bg-red-50 transition-all text-[11px]" title="Delete message">🗑️</button>
+                  )}
+                </div>
               </div>
             </div>
           )
@@ -1024,6 +1052,7 @@ function TeamChatSection({ messages, onChange, currentUser, triggerToast }: {
 function AISummaryPanel({ meeting, root, currentUser, onClose }: { meeting: Meeting; root: Root; currentUser: string; onClose: () => void }) {
   const [activeKey, setActiveKey] = useState("weekly")
   const [response, setResponse] = useState("")
+  const [truncated, setTruncated] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState("")
 
@@ -1034,11 +1063,11 @@ function AISummaryPanel({ meeting, root, currentUser, onClose }: { meeting: Meet
   const monthLabel = new Date(meeting.date + "T00:00:00").toLocaleDateString("en-US", { month: "long", year: "numeric" })
 
   async function generate() {
-    setLoading(true); setResponse(""); setError("")
+    setLoading(true); setResponse(""); setError(""); setTruncated(false)
     try {
       const prompt = activeCat.buildPrompt({ meeting, meetings: inMonthMeetings, monthLabel, currentUser })
-      const text = await callAIAssistant(activeCat.key, prompt)
-      setResponse(text)
+      const { text, truncated: wasTruncated } = await callAIAssistant(activeCat.key, prompt)
+      setResponse(text); setTruncated(wasTruncated)
     } catch (err: any) {
       setError(`Something went wrong: ${err?.message || "unknown error"}`)
     } finally {
@@ -1046,10 +1075,19 @@ function AISummaryPanel({ meeting, root, currentUser, onClose }: { meeting: Meet
     }
   }
 
+  // Locking body scroll while the modal is open stops the wheel/trackpad
+  // scroll from "bleeding through" to the long page behind it — that bleed-
+  // through is exactly what made the main page scroll instead of the panel.
+  useEffect(() => {
+    const prevOverflow = document.body.style.overflow
+    document.body.style.overflow = "hidden"
+    return () => { document.body.style.overflow = prevOverflow }
+  }, [])
+
   return (
-    <div className="fixed inset-0 z-50 flex items-start sm:items-center justify-center bg-black/40 p-4 overflow-y-auto" onClick={onClose}>
-      <div className="rounded-2xl overflow-hidden shadow-2xl mb-5 bg-white max-w-lg w-full my-8" onClick={e => e.stopPropagation()}>
-      <div className="w-full flex items-center gap-3 px-5 py-3.5 text-left text-white" style={{ background: B.red }}>
+    <div className="fixed inset-0 z-50 flex items-start sm:items-center justify-center bg-black/40 p-4" onClick={onClose}>
+      <div className="rounded-2xl overflow-hidden shadow-2xl bg-white max-w-lg w-full my-8 flex flex-col max-h-[85vh]" onClick={e => e.stopPropagation()}>
+      <div className="w-full flex items-center gap-3 px-5 py-3.5 text-left text-white flex-none" style={{ background: B.red }}>
         <span className="text-lg">✨</span>
         <span className="flex-1 font-bold text-sm uppercase tracking-wider" style={{ ...FH }}>AI Assistant</span>
         {response && !loading && <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-white/25">Ready</span>}
@@ -1057,7 +1095,7 @@ function AISummaryPanel({ meeting, root, currentUser, onClose }: { meeting: Meet
       </div>
 
       {(
-        <div className="px-5 py-4 space-y-4 bg-white">
+        <div className="px-5 py-4 space-y-4 bg-white overflow-y-auto">
           <div className="flex flex-wrap gap-2">
             {visibleCategories.map(cat => (
               <button
@@ -1097,6 +1135,9 @@ function AISummaryPanel({ meeting, root, currentUser, onClose }: { meeting: Meet
             <div className="rounded-xl p-4 text-sm leading-relaxed border bg-white whitespace-pre-wrap" style={{ borderColor: activeCat.color + "30", color: "#1a2340", ...FB }}>
               {response || <span className="text-gray-400 italic text-xs">Writing…</span>}
             </div>
+          )}
+          {truncated && !loading && (
+            <div className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2 font-medium">Response was cut short for length — click Regenerate for a tighter version, or ask again to continue.</div>
           )}
         </div>
       )}
@@ -2196,7 +2237,10 @@ export default function ChezaChezaApp() {
                   <img src={logoImg} alt="ChezaCheza" className="h-8 w-auto object-contain" />
                   <div>
                     <h1 className="text-2xl tracking-wide" style={{ ...FH, color: B.magenta }}>ChezaCheza Dance Foundation</h1>
-                    <span className="text-xs text-gray-500 font-medium">Logged in as: <strong className="text-indigo-900">{userEmail}</strong></span>
+                    <span className="text-xs text-gray-500 font-medium flex items-center gap-1.5">
+                      <Avatar email={userEmail} size={18} />
+                      Logged in as: <strong className="text-indigo-900">{userEmail}</strong>
+                    </span>
                   </div>
                 </div>
 
