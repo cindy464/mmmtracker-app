@@ -587,16 +587,20 @@ function RichTextEditor({ value, onChange, disabled, placeholder }: {
   const [showColors, setShowColors] = useState(false)
   const [showHighlights, setShowHighlights] = useState(false)
   const [showFonts, setShowFonts] = useState(false)
+  // Typing here no longer autosaves on every keystroke — it only pushes up
+  // to shared state (and everyone else's screens) when Submit is clicked.
+  // This is a deliberate tradeoff, chosen specifically to close off the
+  // class of bugs where a narrative gets partially overwritten mid-typing:
+  // with nothing saved until an explicit Submit, there's no in-flight
+  // partial state for a teammate's update to collide with.
+  const [isDirty, setIsDirty] = useState(false)
 
   // Only overwrite the live DOM from the incoming value when this device
-  // isn't the one currently typing here. Without the focus guard, a
-  // teammate's realtime edit landing mid-keystroke would yank the cursor
-  // and clobber whatever you were typing. This is also what makes another
-  // person's narration edits actually appear on your screen live — the old
-  // version only re-synced when `disabled` changed, never when `value` did,
-  // so incoming edits saved correctly but never visibly showed up remotely.
+  // isn't the one currently typing here, and there's no unsubmitted draft
+  // sitting in the box — otherwise an incoming update would silently
+  // discard a draft that just hasn't been submitted yet.
   useEffect(() => {
-    if (ref.current && !isFocusedRef.current && ref.current.innerHTML !== value) {
+    if (ref.current && !isFocusedRef.current && !isDirty && ref.current.innerHTML !== value) {
       ref.current.innerHTML = value || ""
     }
   }, [value, disabled])
@@ -604,10 +608,15 @@ function RichTextEditor({ value, onChange, disabled, placeholder }: {
   function exec(cmd: string, val?: string) {
     ref.current?.focus()
     document.execCommand(cmd, false, val)
-    if (ref.current) onChange(ref.current.innerHTML)
+    setIsDirty(true)
     setShowColors(false)
     setShowHighlights(false)
     setShowFonts(false)
+  }
+
+  function submit() {
+    if (ref.current) onChange(ref.current.innerHTML)
+    setIsDirty(false)
   }
 
   const btnBase = "px-2 py-1 rounded text-xs font-bold border border-gray-200 hover:bg-indigo-50 transition-colors"
@@ -657,7 +666,7 @@ function RichTextEditor({ value, onChange, disabled, placeholder }: {
       <div
         ref={ref}
         contentEditable={!disabled}
-        onInput={() => ref.current && onChange(ref.current.innerHTML)}
+        onInput={() => setIsDirty(true)}
         onFocus={() => { isFocusedRef.current = true }}
         onBlur={() => { isFocusedRef.current = false }}
         suppressContentEditableWarning
@@ -665,6 +674,22 @@ function RichTextEditor({ value, onChange, disabled, placeholder }: {
         className={`w-full text-sm border rounded-xl p-3 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 ${disabled ? "bg-gray-50 text-gray-500" : "bg-white"} min-h-[120px] rich-text-edit`}
         style={{ borderColor: "#d1d5db", ...FB }}
       />
+      {!disabled && (
+        <div className="flex items-center justify-between mt-2">
+          <span className="text-[11px] font-medium" style={{ color: isDirty ? "#b45309" : "#9ca3af" }}>
+            {isDirty ? "⚠ Unsubmitted draft — teammates won't see this yet" : "✓ Saved"}
+          </span>
+          <button
+            type="button"
+            onClick={submit}
+            disabled={!isDirty}
+            className="text-xs font-bold px-4 py-1.5 rounded-lg text-white transition-all disabled:opacity-40"
+            style={{ background: B.teal }}
+          >
+            Submit Update
+          </button>
+        </div>
+      )}
     </div>
   )
 }
@@ -1874,6 +1899,12 @@ export default function ChezaChezaApp() {
   const [syncStatus, setSyncStatus] = useState("Connecting to shared workspace...")
   const [liveUsers, setLiveUsers] = useState(1)
   const [showAI, setShowAI] = useState(false)
+  const [refreshing, setRefreshing] = useState(false)
+  const [pullOffset, setPullOffset] = useState(0)
+  const pullOffsetRef = useRef(0)
+  const pullTrackingRef = useRef(false)
+  const pullTouchStartYRef = useRef(0)
+  const latestRootRef = useRef<Root | null>(null)
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const supabaseReady = useRef(false)
   const isApplyingRemote = useRef(false)
@@ -1950,6 +1981,57 @@ export default function ChezaChezaApp() {
       supabaseReady.current = true
     }
   }
+
+  useEffect(() => { latestRootRef.current = root }, [root])
+
+  // Native-feeling pull-to-refresh: only engages when the page is already
+  // scrolled to the very top (so it never fights normal scrolling), tracked
+  // in refs rather than state so the listeners don't get torn down and
+  // re-attached on every pixel of movement.
+  useEffect(() => {
+    const PULL_TRIGGER_PX = 70
+    function onTouchStart(e: TouchEvent) {
+      if (window.scrollY <= 0) {
+        pullTrackingRef.current = true
+        pullTouchStartYRef.current = e.touches[0].clientY
+      }
+    }
+    function onTouchMove(e: TouchEvent) {
+      if (!pullTrackingRef.current) return
+      const delta = e.touches[0].clientY - pullTouchStartYRef.current
+      if (delta > 0 && window.scrollY <= 0) {
+        const damped = Math.min(delta * 0.5, 90)
+        pullOffsetRef.current = damped
+        setPullOffset(damped)
+        if (delta > 10 && e.cancelable) e.preventDefault()
+      } else {
+        pullTrackingRef.current = false
+        pullOffsetRef.current = 0
+        setPullOffset(0)
+      }
+    }
+    async function onTouchEnd() {
+      if (!pullTrackingRef.current) return
+      pullTrackingRef.current = false
+      const shouldRefresh = pullOffsetRef.current > PULL_TRIGGER_PX
+      pullOffsetRef.current = 0
+      setPullOffset(0)
+      if (shouldRefresh && latestRootRef.current) {
+        setRefreshing(true)
+        await reconcileWithServer(latestRootRef.current)
+        showSuccessToast("Pulled the latest from the shared workspace.")
+        setRefreshing(false)
+      }
+    }
+    document.addEventListener("touchstart", onTouchStart, { passive: true })
+    document.addEventListener("touchmove", onTouchMove, { passive: false })
+    document.addEventListener("touchend", onTouchEnd)
+    return () => {
+      document.removeEventListener("touchstart", onTouchStart)
+      document.removeEventListener("touchmove", onTouchMove)
+      document.removeEventListener("touchend", onTouchEnd)
+    }
+  }, [])
 
   // Re-run reconciliation the moment a real session appears (fresh login,
   // not just a restored one) — the mount-time attempt below runs before
@@ -2187,6 +2269,14 @@ export default function ChezaChezaApp() {
   return (
     <div className="min-h-screen pb-20 relative" style={{ ...FB, background: B.cream }}>
       <style>{FONT_IMPORT}</style>
+      {(pullOffset > 0 || refreshing) && isEmailVerified && (
+        <div
+          className="fixed top-0 left-0 right-0 z-40 flex items-center justify-center pointer-events-none transition-all"
+          style={{ height: refreshing ? 44 : pullOffset, opacity: Math.min((refreshing ? 44 : pullOffset) / 40, 1) }}
+        >
+          <span className={`text-xl ${refreshing || pullOffset > 70 ? "animate-spin" : ""}`} style={{ color: B.teal }}>🔄</span>
+        </div>
+      )}
       {toastMessage && <SuccessToast message={toastMessage} onClose={() => setToastMessage(null)} />}
       {showAI && <AISummaryPanel meeting={activeMeeting} root={root} currentUser={userEmail} onClose={() => setShowAI(false)} />}
 
@@ -2273,6 +2363,15 @@ export default function ChezaChezaApp() {
                 </div>
 
                 <div className="flex items-center gap-2">
+                  <button
+                    onClick={async () => { setRefreshing(true); await reconcileWithServer(root); showSuccessToast("Pulled the latest from the shared workspace."); setRefreshing(false) }}
+                    disabled={refreshing}
+                    className="w-7 h-7 rounded-full flex items-center justify-center text-white hover:brightness-105 transition-all shadow-sm disabled:opacity-60"
+                    style={{ background: B.teal }}
+                    title="Refresh — pull the latest saved data"
+                  >
+                    <span className={refreshing ? "animate-spin inline-block" : ""}>🔄</span>
+                  </button>
                   <button onClick={() => setShowAI(true)} className="w-7 h-7 rounded-full flex items-center justify-center text-white hover:brightness-105 transition-all shadow-sm" style={{ background: B.red }} title="AI Assistant">✨</button>
                   <span className="text-[11px] font-bold text-emerald-600 flex items-center gap-1 px-2 py-1 bg-emerald-50 rounded-lg" title="Number of people currently editing">
                     <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" /> {liveUsers} {liveUsers === 1 ? "person" : "people"} editing
