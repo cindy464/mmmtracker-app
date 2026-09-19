@@ -579,11 +579,12 @@ function GreetingScreen({ userName, onCheckIn }: {
   )
 }
 
-function RichTextEditor({ value, onChange, disabled, placeholder }: {
-  value: string; onChange: (html: string) => void; disabled: boolean; placeholder: string
+function RichTextEditor({ value, onChange, disabled, placeholder, draftKey }: {
+  value: string; onChange: (html: string) => void; disabled: boolean; placeholder: string; draftKey: string
 }) {
   const ref = useRef<HTMLDivElement>(null)
   const isFocusedRef = useRef(false)
+  const hasCheckedDraftRef = useRef(false)
   const [showColors, setShowColors] = useState(false)
   const [showHighlights, setShowHighlights] = useState(false)
   const [showFonts, setShowFonts] = useState(false)
@@ -595,12 +596,34 @@ function RichTextEditor({ value, onChange, disabled, placeholder }: {
   // partial state for a teammate's update to collide with.
   const [isDirty, setIsDirty] = useState(false)
 
+  function saveDraft(html: string) {
+    try { localStorage.setItem(`draft_${draftKey}`, html) } catch { /* sandbox */ }
+  }
+  function clearDraft() {
+    try { localStorage.removeItem(`draft_${draftKey}`) } catch { /* sandbox */ }
+  }
+
   // Only overwrite the live DOM from the incoming value when this device
   // isn't the one currently typing here, and there's no unsubmitted draft
   // sitting in the box — otherwise an incoming update would silently
-  // discard a draft that just hasn't been submitted yet.
+  // discard a draft that just hasn't been submitted yet. On first mount,
+  // an unsubmitted draft saved locally (e.g. the tab got closed or crashed
+  // before Submit was clicked) takes priority over the last submitted
+  // value — that's what actually survives an accident, not just the
+  // in-memory React state.
   useEffect(() => {
-    if (ref.current && !isFocusedRef.current && !isDirty && ref.current.innerHTML !== value) {
+    if (!ref.current || isFocusedRef.current) return
+    if (!hasCheckedDraftRef.current) {
+      hasCheckedDraftRef.current = true
+      let draft: string | null = null
+      try { draft = localStorage.getItem(`draft_${draftKey}`) } catch { /* sandbox */ }
+      if (draft && draft !== value) {
+        ref.current.innerHTML = draft
+        setIsDirty(true)
+        return
+      }
+    }
+    if (!isDirty && ref.current.innerHTML !== value) {
       ref.current.innerHTML = value || ""
     }
   }, [value, disabled])
@@ -609,6 +632,7 @@ function RichTextEditor({ value, onChange, disabled, placeholder }: {
     ref.current?.focus()
     document.execCommand(cmd, false, val)
     setIsDirty(true)
+    if (ref.current) saveDraft(ref.current.innerHTML)
     setShowColors(false)
     setShowHighlights(false)
     setShowFonts(false)
@@ -617,6 +641,7 @@ function RichTextEditor({ value, onChange, disabled, placeholder }: {
   function submit() {
     if (ref.current) onChange(ref.current.innerHTML)
     setIsDirty(false)
+    clearDraft()
   }
 
   const btnBase = "px-2 py-1 rounded text-xs font-bold border border-gray-200 hover:bg-indigo-50 transition-colors"
@@ -666,7 +691,7 @@ function RichTextEditor({ value, onChange, disabled, placeholder }: {
       <div
         ref={ref}
         contentEditable={!disabled}
-        onInput={() => setIsDirty(true)}
+        onInput={() => { setIsDirty(true); if (ref.current) saveDraft(ref.current.innerHTML) }}
         onFocus={() => { isFocusedRef.current = true }}
         onBlur={() => { isFocusedRef.current = false }}
         suppressContentEditableWarning
@@ -683,10 +708,13 @@ function RichTextEditor({ value, onChange, disabled, placeholder }: {
             type="button"
             onClick={submit}
             disabled={!isDirty}
-            className="text-xs font-bold px-4 py-1.5 rounded-lg text-white transition-all disabled:opacity-40"
-            style={{ background: B.teal }}
+            className="text-xs font-bold px-4 py-1.5 rounded-lg transition-all"
+            style={isDirty
+              ? { background: B.magenta, color: "white", cursor: "pointer" }
+              : { background: "#D6EEF5", color: "#5B8A96", cursor: "default" }
+            }
           >
-            Submit Update
+            {isDirty ? "Submit Update" : "✓ Submitted"}
           </button>
         </div>
       )}
@@ -1374,6 +1402,7 @@ function DepartmentSection({ departments, onChange, currentUser, triggerToast, m
                   value={dept.update}
                   onChange={html => updateDept(dept.id, { update: html })}
                   disabled={dept.isLocked}
+                  draftKey={`${meeting.id}_${dept.id}`}
                   placeholder="Type department update here... Use the toolbar above for Bold, Italic, Numbered Lists, Colors, and Highlight."
                 />
               </div>
@@ -1984,6 +2013,31 @@ export default function ChezaChezaApp() {
 
   useEffect(() => { latestRootRef.current = root }, [root])
 
+  // Warn before closing/navigating away with an unsubmitted narrative draft
+  // still sitting locally — this is the other half of "no accidents": the
+  // draft itself already survives a crash or accidental close (it's saved
+  // to localStorage as you type), but this catches the moment itself and
+  // gives a chance to hit Submit first instead of relying on that recovery.
+  useEffect(() => {
+    function hasAnyUnsavedDraft(): boolean {
+      try {
+        for (let i = 0; i < localStorage.length; i++) {
+          const key = localStorage.key(i)
+          if (key && key.startsWith("draft_") && localStorage.getItem(key)) return true
+        }
+      } catch { /* sandbox */ }
+      return false
+    }
+    function handler(e: BeforeUnloadEvent) {
+      if (hasAnyUnsavedDraft()) {
+        e.preventDefault()
+        e.returnValue = ""
+      }
+    }
+    window.addEventListener("beforeunload", handler)
+    return () => window.removeEventListener("beforeunload", handler)
+  }, [])
+
   // Native-feeling pull-to-refresh: only engages when the page is already
   // scrolled to the very top (so it never fights normal scrolling), tracked
   // in refs rather than state so the listeners don't get torn down and
@@ -2083,10 +2137,12 @@ export default function ChezaChezaApp() {
             setSyncStatus("Teammate update waiting — finishing your edit first")
             return
           }
+          // Data still syncs live in the background — that part never
+          // stops — but per explicit request, no status chatter for it.
+          // The visible "something changed" moment now only happens when
+          // someone actually clicks Submit.
           isApplyingRemote.current = true
           setRoot(ensureRootFields(newState as Root))
-          setSyncStatus("Live update received from teammate")
-          setTimeout(() => setSyncStatus("All changes saved to shared workspace"), 2000)
         }
       })
       .on("presence", { event: "sync" }, () => {
