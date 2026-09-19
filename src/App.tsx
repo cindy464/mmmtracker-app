@@ -702,7 +702,7 @@ function RichTextEditor({ value, onChange, disabled, placeholder, draftKey }: {
       {!disabled && (
         <div className="flex items-center justify-between mt-2">
           <span className="text-[11px] font-medium" style={{ color: isDirty ? "#b45309" : "#9ca3af" }}>
-            {isDirty ? "⚠ Unsubmitted draft — teammates won't see this yet" : "✓ Saved"}
+            {isDirty ? "⚠ Unsubmitted draft, teammates won't see this yet" : "✓ Saved"}
           </span>
           <button
             type="button"
@@ -1027,7 +1027,7 @@ function TeamChatSection({ messages, onChange, currentUser, triggerToast }: {
       // window.location.href (not window.open) is what reliably hands off to
       // the browser's registered mail handler when the automated send fails.
       window.location.href = `mailto:${mentioned.join(",")}?subject=${subject}&body=${body}`
-      triggerToast("Automated send unavailable for some pings — opening Gmail instead.")
+      triggerToast("Automated send unavailable for some pings. Opening Gmail instead.")
     }
   }
 
@@ -1190,7 +1190,7 @@ function AISummaryPanel({ meeting, root, currentUser, onClose }: { meeting: Meet
             </div>
           )}
           {truncated && !loading && (
-            <div className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2 font-medium">Response was cut short for length — click Regenerate for a tighter version, or ask again to continue.</div>
+            <div className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2 font-medium">Response was cut short for length. Click Regenerate for a tighter version, or ask again to continue.</div>
           )}
         </div>
       )}
@@ -1250,7 +1250,7 @@ function DepartmentSection({ departments, onChange, currentUser, triggerToast, m
       const subject = encodeURIComponent(`ChezaCheza MMM: Action item assigned to you in ${deptName}`)
       const body = encodeURIComponent(`You've been assigned an action item in ${deptName}.\n\nTask: ${item.text || "(untitled)"}\nDeadline: ${item.deadline || "Not set"}\n\nOpen the MMM workspace for full details.`)
       window.location.href = `mailto:${email}?subject=${subject}&body=${body}`
-      triggerToast("Automated send unavailable — opening Gmail instead.")
+      triggerToast("Automated send unavailable. Opening Gmail instead.")
     }
   }
 
@@ -1435,6 +1435,13 @@ function DepartmentSection({ departments, onChange, currentUser, triggerToast, m
                         <div className="flex items-center gap-2 w-full sm:w-auto">
                           <input disabled={dept.isLocked} className="w-32 text-xs border border-gray-300 rounded px-2 py-1 bg-white focus:outline-none" placeholder="Owner email" value={item.owner} onChange={e => updateActionItem(dept.id, item.id, { owner: e.target.value })} />
                           <button type="button" disabled={dept.isLocked} onClick={() => notifyOwner(item, dept.name)} className="text-gray-400 hover:text-blue-600 p-1 disabled:opacity-40 disabled:hover:text-gray-400 transition-all hover:scale-125" title="Email-ping the owner instantly">🔔</button>
+                          <button
+                            type="button"
+                            disabled={dept.isLocked || !item.owner.includes("@")}
+                            onClick={() => { window.location.href = `mailto:${item.owner.trim()}?subject=${encodeURIComponent(`ChezaCheza MMM: ${item.text || "Action item"}`)}` }}
+                            className="text-gray-400 hover:text-red-500 p-1 disabled:opacity-40 disabled:hover:text-gray-400 transition-all hover:scale-125"
+                            title="Open your own email app to write to them directly"
+                          >✉️</button>
                           <input disabled={dept.isLocked} type="date" className="w-32 text-xs border border-gray-300 rounded px-2 py-1 bg-white focus:outline-none" value={item.deadline} onChange={e => updateActionItem(dept.id, item.id, { deadline: e.target.value })} />
                           <select disabled={dept.isLocked} className="text-xs border rounded px-2 py-1 font-bold bg-white" style={{ color: st.text, borderColor: st.border }} value={item.status} onChange={e => updateActionItem(dept.id, item.id, { status: e.target.value })}>
                             <option value="pending">🕒 Pending</option>
@@ -1790,7 +1797,7 @@ function EnhancedAdminPanel({ meeting, onUpdateMeeting, onSpawnWeek, onDeleteMee
         </button>
         {showBin && (
           <div className="mt-3 space-y-2">
-            <p className="text-xs text-gray-500 mb-2">Deleted logs land here first, not gone for good — restore them anytime, or remove them permanently.</p>
+            <p className="text-xs text-gray-500 mb-2">Deleted logs land here first, not gone for good. Restore them anytime, or remove them permanently.</p>
             {sortedBinned.length === 0 ? (
               <p className="text-xs text-gray-400 italic text-center py-4">The bin is empty.</p>
             ) : sortedBinned.map(m => {
@@ -1838,7 +1845,7 @@ function EnhancedAdminPanel({ meeting, onUpdateMeeting, onSpawnWeek, onDeleteMee
                 <div key={entry.id} className="flex items-center justify-between p-3 rounded-xl border border-gray-200 bg-gray-50/50">
                   <div className="text-xs text-gray-700">
                     <span className="font-bold" style={{ ...FB }}>{label}</span>
-                    <span className="text-gray-400"> — weeks {entry.weeks.join(", ")}</span>
+                    <span className="text-gray-400"> · weeks {entry.weeks.join(", ")}</span>
                   </div>
                   <button onClick={() => restoreHistoryEntry(entry.id)} className="text-xs text-indigo-700 hover:text-indigo-900 font-bold px-2.5 py-1 rounded-lg border border-indigo-200 hover:bg-indigo-50 transition-all hover:scale-105">Restore This</button>
                 </div>
@@ -1896,7 +1903,7 @@ function EnhancedAdminPanel({ meeting, onUpdateMeeting, onSpawnWeek, onDeleteMee
               <span className="text-2xl">⚠️</span>
               <h3 className="text-lg text-red-950" style={{ ...FH }}>Delete Week {deleteTarget.week}?</h3>
             </div>
-            <p className="text-xs text-gray-600 font-medium">This can't be undone — all updates, action items, and numbers for this week will be removed.</p>
+            <p className="text-xs text-gray-600 font-medium">This can't be undone. All updates, action items, and numbers for this week will be removed.</p>
             <div className="flex gap-2 pt-2">
               <button onClick={() => setDeleteTarget(null)} className="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold py-2.5 rounded-xl text-xs uppercase tracking-wider transition-colors">Cancel</button>
               <button onClick={() => { onDeleteMeeting(deleteTarget.id); setDeleteTarget(null); triggerToast(`Week ${deleteTarget.week} log deleted.`) }} className="flex-1 bg-red-600 hover:bg-red-700 text-white font-bold py-2.5 rounded-xl text-xs uppercase tracking-wider transition-colors">Yes, Delete</button>
@@ -2134,7 +2141,7 @@ export default function ChezaChezaApp() {
             // this would wipe it out from under you. Skip it; your own save
             // (queued or about to fire) will land using the version we just
             // updated above, so it isn't silently rejected either.
-            setSyncStatus("Teammate update waiting — finishing your edit first")
+            setSyncStatus("Teammate update waiting, finishing your edit first")
             return
           }
           // Data still syncs live in the background — that part never
@@ -2211,8 +2218,8 @@ export default function ChezaChezaApp() {
           saveSyncedVersion(versionRef.current)
           isApplyingRemote.current = true
           setRoot(ensureRootFields(fresh.state as Root))
-          showSuccessToast("Someone else saved changes just before you — showing their latest version. Redo your last edit if it's missing.")
-          setSyncStatus("Reloaded — a teammate's save arrived first")
+          showSuccessToast("Someone else saved changes just before you. Showing their latest version, redo your last edit if it's missing.")
+          setSyncStatus("Reloaded, a teammate's save arrived first")
         } else {
           setSyncStatus("Save issue. Your local copy is safe")
         }
@@ -2252,7 +2259,7 @@ export default function ChezaChezaApp() {
       setEmailError(error.message || "Couldn't send a login code. Try again.")
     } else {
       setOtpSent(true)
-      showSuccessToast(`Code sent to ${email} — check your inbox.`)
+      showSuccessToast(`Code sent to ${email}. Check your inbox.`)
     }
   }
 
@@ -2266,7 +2273,7 @@ export default function ChezaChezaApp() {
     const { error } = await supabase.auth.verifyOtp({ email, token: otpCode.trim(), type: "email" })
     setAuthLoading(false)
     if (error) {
-      setEmailError(error.message || "That code didn't work — check it and try again.")
+      setEmailError(error.message || "That code didn't work. Check it and try again.")
     } else {
       showSuccessToast("Workspace Access Authorized!")
     }
@@ -2294,7 +2301,7 @@ export default function ChezaChezaApp() {
     const stillLive = updated.filter(m => !m.deleted)
     const newActive = id === root.activeMeetingId ? stillLive[0].id : root.activeMeetingId
     setRoot({ ...root, meetings: updated, activeMeetingId: newActive })
-    showSuccessToast("Moved to the bin — restore it anytime from there.")
+    showSuccessToast("Moved to the bin. Restore it anytime from there.")
   }
 
   function handleRestoreMeeting(id: string) {
@@ -2371,7 +2378,7 @@ export default function ChezaChezaApp() {
               <form onSubmit={handleVerifyCode} className="space-y-4 text-left">
                 <div>
                   <label className="block text-xs font-bold mb-1" style={{ color: B.indigo }}>6-Digit Code</label>
-                  <p className="text-[11px] text-gray-400 mb-2">Sent to {loginEmail.trim().toLowerCase()} — check your inbox (and spam folder).</p>
+                  <p className="text-[11px] text-gray-400 mb-2">Sent to {loginEmail.trim().toLowerCase()}. Check your inbox (and spam folder).</p>
                   <input type="text" inputMode="numeric" autoComplete="one-time-code" placeholder="123456" maxLength={6} className="w-full text-lg tracking-[0.4em] text-center border-2 rounded-xl px-4 py-2.5 bg-white text-gray-900 focus:outline-none font-bold transition-colors" style={{ borderColor: "#e4e2f4" }} onFocus={e => e.target.style.borderColor = B.teal} onBlur={e => e.target.style.borderColor = "#e4e2f4"} value={otpCode} onChange={e => setOtpCode(e.target.value.replace(/\D/g, ""))} />
                 </div>
                 {emailError && <div className="border p-2.5 rounded-xl text-xs font-semibold flex items-center gap-2" style={{ background: "#fff0ee", borderColor: B.red, color: B.red }}><span>⚠</span> {emailError}</div>}
@@ -2424,7 +2431,7 @@ export default function ChezaChezaApp() {
                     disabled={refreshing}
                     className="w-7 h-7 rounded-full flex items-center justify-center text-white hover:brightness-105 transition-all shadow-sm disabled:opacity-60"
                     style={{ background: B.teal }}
-                    title="Refresh — pull the latest saved data"
+                    title="Refresh: pull the latest saved data"
                   >
                     <span className={refreshing ? "animate-spin inline-block" : ""}>🔄</span>
                   </button>
