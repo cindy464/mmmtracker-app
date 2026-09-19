@@ -1258,31 +1258,33 @@ function DepartmentSection({ departments, onChange, currentUser, triggerToast, m
           return (
             <React.Fragment key={dept.id}>
             <div className="border rounded-2xl p-4 bg-white shadow-sm space-y-3 transition-all hover:shadow-md hover:-translate-y-0.5" style={{ borderColor: "#e5e7eb", borderLeftWidth: 4, borderLeftColor: accentColor, borderRightWidth: 4, borderRightColor: accentColor }}>
-              <button
-                onClick={() => updateDept(dept.id, { expanded: !isExpanded })}
-                className={`w-full flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-left ${isExpanded ? "border-b border-gray-100 pb-3" : ""}`}
-              >
-                <div className="flex items-center gap-2">
-                  <span className="text-gray-400 text-xs">{isExpanded ? "▼" : "▶"}</span>
-                  {DEPT_ILLUSTRATED_ICONS[dept.id] ? <img src={DEPT_ILLUSTRATED_ICONS[dept.id]} className="w-5 h-5 object-contain" alt="" /> : <span className="text-lg">{dept.iconKey}</span>}
-                  <span className="font-extrabold text-indigo-950 text-base" style={{ ...FH }}>{dept.name}</span>
-                  {dept.isLocked && <span className="bg-amber-100 text-amber-800 text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1">🔒 Locked</span>}
-                  {dept.lockPin && !dept.isLocked && <span className="bg-emerald-100 text-emerald-700 text-[10px] font-bold px-2 py-0.5 rounded-full">🔐 PIN Protected</span>}
-                </div>
+              <div className={`w-full flex flex-col sm:flex-row sm:items-center justify-between gap-2 ${isExpanded ? "border-b border-gray-100 pb-3" : ""}`}>
+                <button
+                  type="button"
+                  onClick={() => updateDept(dept.id, { expanded: !isExpanded })}
+                  className="flex-1 flex items-center gap-2 text-left min-w-0"
+                >
+                  <span className="text-gray-400 text-xs flex-none">{isExpanded ? "▼" : "▶"}</span>
+                  {DEPT_ILLUSTRATED_ICONS[dept.id] ? <img src={DEPT_ILLUSTRATED_ICONS[dept.id]} className="w-5 h-5 object-contain flex-none" alt="" /> : <span className="text-lg flex-none">{dept.iconKey}</span>}
+                  <span className="font-extrabold text-indigo-950 text-base truncate" style={{ ...FH }}>{dept.name}</span>
+                  {dept.isLocked && <span className="bg-amber-100 text-amber-800 text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1 flex-none">🔒 Locked</span>}
+                  {dept.lockPin && !dept.isLocked && <span className="bg-emerald-100 text-emerald-700 text-[10px] font-bold px-2 py-0.5 rounded-full flex-none">🔐 PIN Protected</span>}
+                </button>
 
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 flex-none">
                   <span className="text-xs font-bold px-2.5 py-1 rounded-lg border flex items-center gap-1" style={{ background: currentSticker.bg, borderColor: currentSticker.border, color: currentSticker.text }}>
                     {currentSticker.icon} {currentSticker.label}
                   </span>
-                  <span
-                    onClick={e => { e.stopPropagation(); handleLockToggle(dept) }}
-                    className="p-1.5 hover:bg-gray-100 rounded-lg text-gray-400 hover:text-gray-700 transition-all hover:scale-110 cursor-pointer"
+                  <button
+                    type="button"
+                    onClick={() => handleLockToggle(dept)}
+                    className="p-1.5 hover:bg-gray-100 rounded-lg text-gray-400 hover:text-gray-700 transition-all hover:scale-110"
                     title={dept.isLocked ? "Unlock section" : "Lock section with PIN"}
                   >
                     {dept.isLocked ? <span className="text-amber-600">🔒</span> : <span>🔓</span>}
-                  </span>
+                  </button>
                 </div>
-              </button>
+              </div>
 
               {isExpanded && (
               <>
@@ -1875,6 +1877,13 @@ export default function ChezaChezaApp() {
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const supabaseReady = useRef(false)
   const isApplyingRemote = useRef(false)
+  // True from the moment a save is queued (debounce pending) until it
+  // finishes. While true, a live update from elsewhere is deferred instead
+  // of overwriting the screen mid-keystroke — this is the actual cause of
+  // "things erase while adding action items on phone": a teammate's (or
+  // your own other device's) save was landing while you were still typing,
+  // and the realtime handler applied it immediately with no protection.
+  const localEditInFlight = useRef(false)
   const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null)
   // The version we last loaded from Supabase. Saves are conditional on this
   // number matching the database's current version — if someone else (a
@@ -1979,8 +1988,19 @@ export default function ChezaChezaApp() {
       .on("postgres_changes", { event: "*", schema: "public", table: "app_state" }, (payload: any) => {
         const newState = payload.new?.state
         const senderSession = payload.new?.updated_by_session
+        // Always track the true current version, even when deferring below —
+        // this is what lets a save queued while typing still succeed once it
+        // fires, instead of being rejected and triggering a second overwrite.
         if (typeof payload.new?.version === "number") { versionRef.current = payload.new.version; saveSyncedVersion(payload.new.version) }
         if (newState?.meetings && senderSession !== SESSION_ID) {
+          if (localEditInFlight.current) {
+            // A local edit is mid-keystroke or mid-save right now — applying
+            // this would wipe it out from under you. Skip it; your own save
+            // (queued or about to fire) will land using the version we just
+            // updated above, so it isn't silently rejected either.
+            setSyncStatus("Teammate update waiting — finishing your edit first")
+            return
+          }
           isApplyingRemote.current = true
           setRoot(ensureRootFields(newState as Root))
           setSyncStatus("Live update received from teammate")
@@ -2014,7 +2034,12 @@ export default function ChezaChezaApp() {
     if (!supabaseReady.current) return
     if (isApplyingRemote.current) { isApplyingRemote.current = false; return }
     if (saveTimer.current) clearTimeout(saveTimer.current)
+    // Set the moment ANY local edit queues a save, not just when it fires —
+    // this is what tells the realtime handler above to hold off while you're
+    // still typing, rather than overwriting mid-keystroke.
+    localEditInFlight.current = true
     saveTimer.current = setTimeout(async () => {
+      try {
       // Belt-and-suspenders backup: log every attempted save to history,
       // win or lose the version race below. Even if this edit gets rejected
       // as a conflict, its content is never gone — it's sitting in
@@ -2053,6 +2078,9 @@ export default function ChezaChezaApp() {
         } else {
           setSyncStatus("Save issue. Your local copy is safe")
         }
+      }
+      } finally {
+        localEditInFlight.current = false
       }
     }, AUTO_SAVE_DEBOUNCE_MS)
     return () => { if (saveTimer.current) clearTimeout(saveTimer.current) }
