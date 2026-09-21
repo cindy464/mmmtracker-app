@@ -150,6 +150,13 @@ interface ChatMessage {
   heartedBy: string[]
 }
 
+interface ActivityEntry {
+  id: string
+  user: string
+  action: string
+  ts: number
+}
+
 interface Meeting {
   id: string
   weekNumber: number
@@ -167,12 +174,15 @@ interface Meeting {
   beatKibera: string
   chatMessages: ChatMessage[]
   deleted: boolean
+  activityLog?: ActivityEntry[]
 }
 
 interface Root {
   meetings: Meeting[]
   activeMeetingId: string
   settings: { departments: Dept[] }
+  lastEditedBy?: string
+  lastEditedAt?: string
 }
 
 function emptyHub(name: string): Hub {
@@ -430,17 +440,24 @@ function mergeMeeting(b: Meeting | undefined, l: Meeting, r: Meeting): Meeting {
     // by id so no message is ever lost when two people post at the same time.
     chatMessages:  mergeById(b?.chatMessages, l.chatMessages, r.chatMessages, (bb, ll, rr) => !jsonEq(ll, bb) ? ll : rr),
     announcements: mergeById(b?.announcements, l.announcements, r.announcements, (bb, ll, rr) => !jsonEq(ll, bb) ? ll : rr),
+    // Audit trail — union by id so no "who did what when" entry is ever lost.
+    activityLog: mergeById(b?.activityLog, l.activityLog, r.activityLog, (bb, ll, rr) => !jsonEq(ll, bb) ? ll : rr),
   }
 }
 
 function mergeRoots(base: Root | null, local: Root, remote: Root): Root {
   const b = base || undefined
+  // Keep the most recent "last edited by / at" stamp (ISO strings compare in
+  // time order), so the Save History always shows the genuinely latest editor.
+  const newer = (local.lastEditedAt || "") >= (remote.lastEditedAt || "") ? local : remote
   return {
     // activeMeetingId is which week YOU are looking at — keep your own so a
     // teammate switching weeks never drags your screen to a different log.
     activeMeetingId: local.activeMeetingId,
     settings: pickLeaf(b?.settings, local.settings, remote.settings),
     meetings: mergeById(b?.meetings, local.meetings, remote.meetings, mergeMeeting),
+    lastEditedBy: newer.lastEditedBy,
+    lastEditedAt: newer.lastEditedAt,
   }
 }
 
@@ -462,7 +479,24 @@ function createMeeting(wk: number, defs: typeof DEFAULT_DEPTS, dateStr?: string)
     beatKibera: "",
     chatMessages: [],
     deleted: false,
+    activityLog: [],
   }
+}
+
+// Friendly label for the Activity Log, derived from which part of a meeting a
+// save touched. Returns null for changes we don't want to log (chat has its own
+// attribution; the activity log itself must not log itself).
+function activityLabel(u: Partial<Meeting>): string | null {
+  const keys = Object.keys(u)
+  if (keys.length === 1 && (keys[0] === "chatMessages" || keys[0] === "activityLog")) return null
+  if ("numbersLocked" in u) return u.numbersLocked ? "locked the attendance numbers" : "unlocked the attendance numbers"
+  if ("departments" in u) return "Departmental updates & action items"
+  if ("impactData" in u) return "Hub attendance numbers"
+  if ("announcements" in u) return "Announcements"
+  if ("staffing" in u) return "Staffing log"
+  if ("happySchoolsStudents" in u || "beatMathare" in u || "beatKibera" in u || "gcCounters" in u) return "Program counters"
+  if ("chatMessages" in u) return null
+  return "Workspace update"
 }
 
 function loadRoot(): Root {
@@ -495,6 +529,7 @@ function ensureMeetingFields(m: Meeting): Meeting {
     beatKibera: (m as any).beatKibera ?? "",
     chatMessages: ((m as any).chatMessages ?? []).map((msg: ChatMessage) => ({ ...msg, heartedBy: msg.heartedBy ?? [] })),
     deleted: (m as any).deleted ?? false,
+    activityLog: (m as any).activityLog ?? [],
     departments,
     impactData: (m.impactData || []).map((c: Community) => ({ ...c, hubs: (c.hubs || []).map((h: Hub) => ({ ...h })) })),
   }
@@ -1748,6 +1783,43 @@ function AnnouncementsSection({ announcements, onChange, currentUser, triggerToa
   )
 }
 
+// Audit trail — a plain-language timeline of who updated which part of this
+// week's log, and when. Read-only; it fills itself as people work.
+function ActivityLogSection({ activityLog }: { activityLog: ActivityEntry[] }) {
+  const [exp, setExp] = useState(false)
+  const entries = [...(activityLog || [])].sort((a, b) => b.ts - a.ts).slice(0, 150)
+
+  return (
+    <Section title="Activity Log — Who Updated & When" icon="🕓" color={B.goldLight} badge={`${activityLog?.length || 0} events`} expanded={exp} onToggle={() => setExp(!exp)}>
+      <div className="bg-white rounded-xl p-2.5 mb-1 text-[11px] text-gray-500 font-medium flex items-center gap-2 border border-gray-100" style={{ ...FB }}>
+        <span>🕓</span> A running record of who changed what and when — use it with Admin → Save History to pick the right version to restore.
+      </div>
+      {entries.length === 0 ? (
+        <p className="text-center text-xs text-gray-400 py-4" style={{ ...FB }}>No activity recorded yet for this week.</p>
+      ) : (
+        <div className="space-y-1.5 max-h-80 overflow-y-auto">
+          {entries.map(e => {
+            const name = firstNameOf(e.user)
+            let when = ""
+            try { when = new Date(e.ts).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) } catch { }
+            return (
+              <div key={e.id} className="flex items-center gap-2.5 p-2 rounded-lg border border-gray-100 bg-gray-50/60">
+                <Avatar email={e.user} size={26} />
+                <div className="flex-1 min-w-0">
+                  <div className="text-xs text-indigo-950 truncate" style={{ ...FB }}>
+                    <span className="font-bold">{name}</span> <span className="text-gray-500">updated</span> <span className="font-semibold">{e.action}</span>
+                  </div>
+                  <div className="text-[10px] text-gray-400">{when}</div>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </Section>
+  )
+}
+
 function EnhancedAdminPanel({ meeting, onUpdateMeeting, onSpawnWeek, onDeleteMeeting, onRestoreMeeting, onPermanentDelete, onRestoreFromHistory, triggerToast, currentUser, liveMeetings, binnedMeetings, onToggleNumbersLock }: {
   meeting: Meeting; onUpdateMeeting: (u: Partial<Meeting>) => void; onSpawnWeek: (wk: number, dateStr: string) => void; onDeleteMeeting: (id: string) => void; onRestoreMeeting: (id: string) => void; onPermanentDelete: (id: string) => void; onRestoreFromHistory: (state: Root) => void; triggerToast: (m: string) => void; currentUser: string; liveMeetings: Meeting[]; binnedMeetings: Meeting[]; onToggleNumbersLock: () => void
 }) {
@@ -1760,13 +1832,13 @@ function EnhancedAdminPanel({ meeting, onUpdateMeeting, onSpawnWeek, onDeleteMee
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; week: number } | null>(null)
   const [showBin, setShowBin] = useState(false)
   const [showHistory, setShowHistory] = useState(false)
-  const [historyEntries, setHistoryEntries] = useState<{ id: number; created_at: string; weeks: number[] }[]>([])
+  const [historyEntries, setHistoryEntries] = useState<{ id: number; created_at: string; weeks: number[]; by?: string }[]>([])
   const [loadingHistory, setLoadingHistory] = useState(false)
 
   async function loadHistory() {
     setLoadingHistory(true)
     const { data } = await supabase.from("app_state_history").select("id, state, created_at").order("created_at", { ascending: false }).limit(20)
-    setHistoryEntries((data || []).map((row: any) => ({ id: row.id, created_at: row.created_at, weeks: (row.state?.meetings || []).map((m: any) => m.weekNumber) })))
+    setHistoryEntries((data || []).map((row: any) => ({ id: row.id, created_at: row.created_at, weeks: (row.state?.meetings || []).map((m: any) => m.weekNumber), by: row.state?.lastEditedBy || "" })))
     setLoadingHistory(false)
   }
 
@@ -1967,6 +2039,7 @@ function EnhancedAdminPanel({ meeting, onUpdateMeeting, onSpawnWeek, onDeleteMee
                 <div key={entry.id} className="flex items-center justify-between p-3 rounded-xl border border-gray-200 bg-gray-50/50">
                   <div className="text-xs text-gray-700">
                     <span className="font-bold" style={{ ...FB }}>{label}</span>
+                    {entry.by && <span className="text-gray-400"> · by {firstNameOf(entry.by)}</span>}
                     <span className="text-gray-400"> · weeks {entry.weeks.join(", ")}</span>
                   </div>
                   <button onClick={() => restoreHistoryEntry(entry.id)} className="text-xs text-indigo-700 hover:text-indigo-900 font-bold px-2.5 py-1 rounded-lg border border-indigo-200 hover:bg-indigo-50 transition-all hover:scale-105">Restore This</button>
@@ -2408,8 +2481,24 @@ export default function ChezaChezaApp() {
 
   function updateActiveMeeting(updates: Partial<Meeting>) {
     if (!root || !activeMeeting) return
-    const updatedMeetings = root.meetings.map(m => m.id === activeMeeting.id ? { ...m, ...updates } : m)
-    setRoot({ ...root, meetings: updatedMeetings })
+    let finalUpdates = updates
+    // Record an audit-trail entry (name + what + time) for meaningful edits.
+    // Rapid same-user/same-area edits within 45s collapse into one entry so the
+    // log stays readable, and the newest timestamp is kept.
+    const label = activityLabel(updates)
+    if (label && userEmail) {
+      const log = [...(activeMeeting.activityLog || [])]
+      const now = Date.now()
+      const last = log[log.length - 1]
+      if (last && last.user === userEmail && last.action === label && now - last.ts < 45000) {
+        log[log.length - 1] = { ...last, ts: now }
+      } else {
+        log.push({ id: uid(), user: userEmail, action: label, ts: now })
+      }
+      finalUpdates = { ...updates, activityLog: log.slice(-200) }
+    }
+    const updatedMeetings = root.meetings.map(m => m.id === activeMeeting.id ? { ...m, ...finalUpdates } : m)
+    setRoot({ ...root, meetings: updatedMeetings, lastEditedBy: userEmail || root.lastEditedBy, lastEditedAt: new Date().toISOString() })
   }
 
   function handleSpawnWeek(wkNum: number, dateStr: string) {
@@ -2605,6 +2694,8 @@ export default function ChezaChezaApp() {
                 <MainCounterSection meeting={activeMeeting} impactData={activeMeeting.impactData} />
 
                 <AnnouncementsSection announcements={activeMeeting.announcements} onChange={announcements => updateActiveMeeting({ announcements })} currentUser={userEmail} triggerToast={showSuccessToast} />
+
+                <ActivityLogSection activityLog={activeMeeting.activityLog || []} />
 
                 <TeamChatSection messages={activeMeeting.chatMessages} onChange={chatMessages => updateActiveMeeting({ chatMessages })} currentUser={userEmail} triggerToast={showSuccessToast} />
 
