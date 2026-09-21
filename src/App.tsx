@@ -1304,6 +1304,21 @@ function DepartmentSection({ departments, onChange, currentUser, triggerToast, m
   // any normal edit, so teammates end up seeing the corrected version too.
   const [histories, setHistories] = useState<Record<string, { undo: Dept[]; redo: Dept[] }>>({})
   const lastSnapRef = useRef<Record<string, number>>({})
+  const skipHistSaveRef = useRef(false)
+
+  // Persist Undo/Redo history on THIS device so it survives page reloads and
+  // stays usable (kept per week log, in this browser only — never synced).
+  useEffect(() => {
+    let loaded: Record<string, { undo: Dept[]; redo: Dept[] }> = {}
+    try { const raw = localStorage.getItem(`undohist_${meeting.id}`); loaded = raw ? JSON.parse(raw) : {} } catch { loaded = {} }
+    skipHistSaveRef.current = true
+    setHistories(loaded)
+    lastSnapRef.current = {}
+  }, [meeting.id])
+  useEffect(() => {
+    if (skipHistSaveRef.current) { skipHistSaveRef.current = false; return }
+    try { localStorage.setItem(`undohist_${meeting.id}`, JSON.stringify(histories)) } catch { /* quota/sandbox — in-memory history still works */ }
+  }, [histories, meeting.id])
 
   // Snapshot a department's state onto its undo stack right BEFORE a change.
   // Rapid edits within ~1.2s (e.g. typing) collapse into a single undo step so
@@ -1317,13 +1332,15 @@ function DepartmentSection({ departments, onChange, currentUser, triggerToast, m
     if (!cur) return
     setHistories(h => {
       const entry = h[deptId] || { undo: [], redo: [] }
-      return { ...h, [deptId]: { undo: [...entry.undo, cur].slice(-40), redo: [] } }
+      return { ...h, [deptId]: { undo: [...entry.undo, cur].slice(-25), redo: [] } }
     })
   }
 
   function undoDept(deptId: string) {
+    const dept = departments.find(d => d.id === deptId)
+    if (dept?.isLocked) { triggerToast("This department is locked — unlock it first, then Undo."); return }
     const entry = histories[deptId]
-    if (!entry || entry.undo.length === 0) { triggerToast("Nothing left to undo here."); return }
+    if (!entry || entry.undo.length === 0) { triggerToast("Nothing to undo yet. Make a change here and Undo will bring it back."); return }
     const prev = entry.undo[entry.undo.length - 1]
     const cur = departments.find(d => d.id === deptId)
     lastSnapRef.current[deptId] = 0
@@ -1336,8 +1353,10 @@ function DepartmentSection({ departments, onChange, currentUser, triggerToast, m
   }
 
   function redoDept(deptId: string) {
+    const dept = departments.find(d => d.id === deptId)
+    if (dept?.isLocked) { triggerToast("This department is locked — unlock it first, then Redo."); return }
     const entry = histories[deptId]
-    if (!entry || entry.redo.length === 0) { triggerToast("Nothing to redo here."); return }
+    if (!entry || entry.redo.length === 0) { triggerToast("Nothing to redo. Redo becomes available right after you Undo something."); return }
     const next = entry.redo[entry.redo.length - 1]
     const cur = departments.find(d => d.id === deptId)
     lastSnapRef.current[deptId] = 0
@@ -1453,8 +1472,8 @@ function DepartmentSection({ departments, onChange, currentUser, triggerToast, m
           const accentColor = community ? community.color : (DEPT_COLORS[dept.id] || B.indigo)
           const isExpanded = dept.expanded !== false
           const hist = histories[dept.id] || { undo: [], redo: [] }
-          const canUndo = hist.undo.length > 0 && !dept.isLocked
-          const canRedo = hist.redo.length > 0 && !dept.isLocked
+          const hasUndo = hist.undo.length > 0 && !dept.isLocked
+          const hasRedo = hist.redo.length > 0 && !dept.isLocked
 
           return (
             <React.Fragment key={dept.id}>
@@ -1473,21 +1492,21 @@ function DepartmentSection({ departments, onChange, currentUser, triggerToast, m
                 </button>
 
                 <div className="flex items-center gap-2 flex-none">
-                  <div className="flex items-center gap-0.5 mr-0.5">
+                  <div className="flex items-center gap-1 mr-0.5">
                     <button
                       type="button"
-                      disabled={!canUndo}
                       onClick={() => undoDept(dept.id)}
-                      className="p-1.5 hover:bg-indigo-50 rounded-lg text-gray-400 hover:text-indigo-700 transition-all hover:scale-110 disabled:opacity-25 disabled:hover:scale-100 disabled:hover:bg-transparent disabled:hover:text-gray-400"
+                      className="flex items-center gap-1 px-2 py-1 rounded-lg border text-xs font-bold transition-all hover:scale-105 hover:brightness-95"
+                      style={{ borderColor: hasUndo ? B.indigo : "#d1d5db", color: hasUndo ? B.indigo : "#9ca3af", background: hasUndo ? B.indigo + "10" : "#fff" }}
                       title="Undo the last change in this department"
-                    >↶</button>
+                    ><span className="text-sm leading-none">↶</span><span className="hidden sm:inline">Undo</span></button>
                     <button
                       type="button"
-                      disabled={!canRedo}
                       onClick={() => redoDept(dept.id)}
-                      className="p-1.5 hover:bg-indigo-50 rounded-lg text-gray-400 hover:text-indigo-700 transition-all hover:scale-110 disabled:opacity-25 disabled:hover:scale-100 disabled:hover:bg-transparent disabled:hover:text-gray-400"
+                      className="flex items-center gap-1 px-2 py-1 rounded-lg border text-xs font-bold transition-all hover:scale-105 hover:brightness-95"
+                      style={{ borderColor: hasRedo ? B.indigo : "#d1d5db", color: hasRedo ? B.indigo : "#9ca3af", background: hasRedo ? B.indigo + "10" : "#fff" }}
                       title="Redo the change you just undid"
-                    >↷</button>
+                    ><span className="text-sm leading-none">↷</span><span className="hidden sm:inline">Redo</span></button>
                   </div>
                   <span className="text-xs font-bold px-2.5 py-1 rounded-lg border flex items-center gap-1" style={{ background: currentSticker.bg, borderColor: currentSticker.border, color: currentSticker.text }}>
                     {currentSticker.icon} {currentSticker.label}
