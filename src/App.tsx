@@ -2146,6 +2146,16 @@ export default function ChezaChezaApp() {
   const showSuccessToast = useCallback((msg: string) => setToastMessage(msg), [])
   const hasReconciledAfterAuth = useRef(false)
 
+  // Which week YOU are viewing is a per-device choice. Whenever we apply a state
+  // that came from the server (a teammate's save, a background poll, initial
+  // load), keep THIS device's active week instead of adopting theirs — otherwise
+  // switching week logs on one device would drag everyone else's screen along.
+  function withLocalActive(incoming: Root): Root {
+    const current = latestRootRef.current?.activeMeetingId
+    const stillValid = !!current && incoming.meetings.some(m => m.id === current && !m.deleted)
+    return stillValid ? { ...incoming, activeMeetingId: current as string } : incoming
+  }
+
   async function reconcileWithServer(local: Root) {
     const lastKnownVersion = loadSyncedVersion()
     try {
@@ -2161,7 +2171,7 @@ export default function ChezaChezaApp() {
           saveSyncedVersion(remoteVersion)
           baseRootRef.current = remoteState
           isApplyingRemote.current = true
-          setRoot(remoteState)
+          setRoot(withLocalActive(remoteState))
           setSyncStatus("Connected to shared workspace")
         } else {
           versionRef.current = remoteVersion
@@ -2206,7 +2216,7 @@ export default function ChezaChezaApp() {
         saveSyncedVersion(remoteVersion)
         baseRootRef.current = incoming
         isApplyingRemote.current = true
-        setRoot(incoming)
+        setRoot(withLocalActive(incoming))
         setSyncStatus("Synced the latest from another device")
       }
     } catch { /* offline; the next tick will retry */ }
@@ -2345,7 +2355,7 @@ export default function ChezaChezaApp() {
           }
           isApplyingRemote.current = true
           baseRootRef.current = incoming
-          setRoot(incoming)
+          setRoot(withLocalActive(incoming))
         }
       })
       .on("presence", { event: "sync" }, () => {
