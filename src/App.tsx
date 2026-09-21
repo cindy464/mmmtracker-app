@@ -138,6 +138,7 @@ interface Announcement {
   postedBy: string
   date: string
   isUrgent: boolean
+  ts?: number
 }
 
 interface ChatMessage {
@@ -1263,24 +1264,79 @@ function DepartmentSection({ departments, onChange, currentUser, triggerToast, m
 }) {
   const [exp, setExp] = useState(true)
   const [lockModalDept, setLockModalDept] = useState<Dept | null>(null)
+  // Per-department Undo/Redo history. It lives on THIS device only (a personal
+  // "take that back" safety net), but an undo/redo still saves and syncs like
+  // any normal edit, so teammates end up seeing the corrected version too.
+  const [histories, setHistories] = useState<Record<string, { undo: Dept[]; redo: Dept[] }>>({})
+  const lastSnapRef = useRef<Record<string, number>>({})
+
+  // Snapshot a department's state onto its undo stack right BEFORE a change.
+  // Rapid edits within ~1.2s (e.g. typing) collapse into a single undo step so
+  // Undo doesn't rewind one character at a time.
+  function snapshot(deptId: string) {
+    const now = Date.now()
+    const last = lastSnapRef.current[deptId] || 0
+    lastSnapRef.current[deptId] = now
+    if (now - last < 1200) return
+    const cur = departments.find(d => d.id === deptId)
+    if (!cur) return
+    setHistories(h => {
+      const entry = h[deptId] || { undo: [], redo: [] }
+      return { ...h, [deptId]: { undo: [...entry.undo, cur].slice(-40), redo: [] } }
+    })
+  }
+
+  function undoDept(deptId: string) {
+    const entry = histories[deptId]
+    if (!entry || entry.undo.length === 0) { triggerToast("Nothing left to undo here."); return }
+    const prev = entry.undo[entry.undo.length - 1]
+    const cur = departments.find(d => d.id === deptId)
+    lastSnapRef.current[deptId] = 0
+    onChange(departments.map(d => d.id === deptId ? { ...prev, updatedBy: currentUser } : d))
+    setHistories(h => {
+      const e = h[deptId] || { undo: [], redo: [] }
+      return { ...h, [deptId]: { undo: e.undo.slice(0, -1), redo: cur ? [...e.redo, cur] : e.redo } }
+    })
+    triggerToast("Undid the last change in this department.")
+  }
+
+  function redoDept(deptId: string) {
+    const entry = histories[deptId]
+    if (!entry || entry.redo.length === 0) { triggerToast("Nothing to redo here."); return }
+    const next = entry.redo[entry.redo.length - 1]
+    const cur = departments.find(d => d.id === deptId)
+    lastSnapRef.current[deptId] = 0
+    onChange(departments.map(d => d.id === deptId ? { ...next, updatedBy: currentUser } : d))
+    setHistories(h => {
+      const e = h[deptId] || { undo: [], redo: [] }
+      return { ...h, [deptId]: { undo: cur ? [...e.undo, cur] : e.undo, redo: e.redo.slice(0, -1) } }
+    })
+    triggerToast("Redid the change in this department.")
+  }
 
   function updateDept(id: string, updates: Partial<Dept>) {
+    // Don't clutter Undo history with pure view toggles (expand/collapse).
+    const isViewOnly = Object.keys(updates).length === 1 && "expanded" in updates
+    if (!isViewOnly) snapshot(id)
     onChange(departments.map(d => d.id === id ? { ...d, ...updates, updatedBy: currentUser } : d))
     triggerToast("Department report updated.")
   }
 
   function addActionItem(deptId: string) {
+    snapshot(deptId)
     const newItem: ActionItem = { id: uid(), text: "", owner: currentUser, deadline: "", status: "pending", department: deptId, weekId: "" }
     onChange(departments.map(d => d.id === deptId ? { ...d, actionItems: [...(d.actionItems || []), newItem] } : d))
     triggerToast("Action item added.")
   }
 
   function updateActionItem(deptId: string, itemId: string, updates: Partial<ActionItem>) {
+    snapshot(deptId)
     onChange(departments.map(d => d.id !== deptId ? d : { ...d, actionItems: d.actionItems.map(a => a.id === itemId ? { ...a, ...updates } : a) }))
     triggerToast("Action item updated.")
   }
 
   function deleteActionItem(deptId: string, itemId: string) {
+    snapshot(deptId)
     onChange(departments.map(d => d.id !== deptId ? d : { ...d, actionItems: d.actionItems.filter(a => a.id !== itemId) }))
     triggerToast("Action item removed.")
   }
@@ -1361,6 +1417,9 @@ function DepartmentSection({ departments, onChange, currentUser, triggerToast, m
           const community = regionName ? impactData.find(c => c.name === regionName) || null : null
           const accentColor = community ? community.color : (DEPT_COLORS[dept.id] || B.indigo)
           const isExpanded = dept.expanded !== false
+          const hist = histories[dept.id] || { undo: [], redo: [] }
+          const canUndo = hist.undo.length > 0 && !dept.isLocked
+          const canRedo = hist.redo.length > 0 && !dept.isLocked
 
           return (
             <React.Fragment key={dept.id}>
@@ -1379,6 +1438,22 @@ function DepartmentSection({ departments, onChange, currentUser, triggerToast, m
                 </button>
 
                 <div className="flex items-center gap-2 flex-none">
+                  <div className="flex items-center gap-0.5 mr-0.5">
+                    <button
+                      type="button"
+                      disabled={!canUndo}
+                      onClick={() => undoDept(dept.id)}
+                      className="p-1.5 hover:bg-indigo-50 rounded-lg text-gray-400 hover:text-indigo-700 transition-all hover:scale-110 disabled:opacity-25 disabled:hover:scale-100 disabled:hover:bg-transparent disabled:hover:text-gray-400"
+                      title="Undo the last change in this department"
+                    >↶</button>
+                    <button
+                      type="button"
+                      disabled={!canRedo}
+                      onClick={() => redoDept(dept.id)}
+                      className="p-1.5 hover:bg-indigo-50 rounded-lg text-gray-400 hover:text-indigo-700 transition-all hover:scale-110 disabled:opacity-25 disabled:hover:scale-100 disabled:hover:bg-transparent disabled:hover:text-gray-400"
+                      title="Redo the change you just undid"
+                    >↷</button>
+                  </div>
                   <span className="text-xs font-bold px-2.5 py-1 rounded-lg border flex items-center gap-1" style={{ background: currentSticker.bg, borderColor: currentSticker.border, color: currentSticker.text }}>
                     {currentSticker.icon} {currentSticker.label}
                   </span>
@@ -1636,7 +1711,7 @@ function AnnouncementsSection({ announcements, onChange, currentUser, triggerToa
 
   function post() {
     if (!text.trim()) return
-    const newA: Announcement = { id: uid(), text: text.trim(), postedBy: currentUser, date: new Date().toLocaleDateString(), isUrgent: urgent }
+    const newA: Announcement = { id: uid(), text: text.trim(), postedBy: currentUser, date: new Date().toLocaleDateString(), isUrgent: urgent, ts: Date.now() }
     onChange([newA, ...announcements])
     triggerToast("Announcement published.")
     setText(""); setUrgent(false)
@@ -1654,7 +1729,7 @@ function AnnouncementsSection({ announcements, onChange, currentUser, triggerToa
         </div>
 
         <div className="space-y-2">
-          {announcements.map(a => (
+          {[...announcements].sort((a, b) => (b.ts || 0) - (a.ts || 0)).map(a => (
             <div key={a.id} className={`p-3 rounded-xl border flex items-start justify-between gap-2 ${a.isUrgent ? "bg-red-50 border-red-200 text-red-950" : "bg-white border-gray-200 text-gray-900"}`}>
               <div>
                 <div className="flex items-center gap-2 mb-1">
@@ -2041,7 +2116,52 @@ export default function ChezaChezaApp() {
     }
   }
 
+  // Cross-device catch-up. Mobile browsers drop the realtime websocket when the
+  // screen sleeps or the tab is backgrounded, so a phone's change can fail to
+  // reach a laptop live. This lightweight poll (and the focus/visibility check
+  // below) pulls anything newer we missed — but only when we are NOT mid-edit,
+  // so it never interrupts typing, and it never triggers a save of its own.
+  async function pollForRemoteChanges() {
+    if (!supabaseReady.current || localEditInFlight.current) return
+    try {
+      const { data } = await supabase.from("app_state").select("state, version").eq("id", 1).maybeSingle()
+      if (!data?.state?.meetings) return
+      const remoteVersion = (data as any).version ?? 0
+      if (remoteVersion > versionRef.current) {
+        const incoming = ensureRootFields(data.state as Root)
+        versionRef.current = remoteVersion
+        saveSyncedVersion(remoteVersion)
+        baseRootRef.current = incoming
+        isApplyingRemote.current = true
+        setRoot(incoming)
+        setSyncStatus("Synced the latest from another device")
+      }
+    } catch { /* offline; the next tick will retry */ }
+  }
+
   useEffect(() => { latestRootRef.current = root }, [root])
+
+  // Poll every 12s as a safety net for realtime events missed across devices.
+  useEffect(() => {
+    const id = setInterval(() => {
+      if (document.hidden) return
+      pollForRemoteChanges()
+    }, 12000)
+    return () => clearInterval(id)
+  }, [])
+
+  // The instant this tab/device is refocused, pull anything we missed while it
+  // was backgrounded or asleep — this is what makes a laptop catch up to a
+  // phone the moment you look at it again.
+  useEffect(() => {
+    function onWake() { if (!document.hidden) pollForRemoteChanges() }
+    window.addEventListener("focus", onWake)
+    document.addEventListener("visibilitychange", onWake)
+    return () => {
+      window.removeEventListener("focus", onWake)
+      document.removeEventListener("visibilitychange", onWake)
+    }
+  }, [])
 
   useEffect(() => {
     function hasAnyUnsavedDraft(): boolean {
