@@ -9,10 +9,6 @@ import sunIcon from "@/imports/icons/sun.png"
 import dancerIcon from "@/imports/icons/dancer.png"
 
 // ─── Brand Theme ─────────────────────────────────────────────────────────────
-// Pulled directly from the ChezaCheza brand lookbook (exact hex values, not
-// approximations) — cream is the dominant surface, the rest are bold solid
-// accents used the way the lookbook uses them: full-saturation pill blocks,
-// not soft tints.
 const B = {
   cream:      "#F7F1EE",
   indigo:     "#433D7B",
@@ -31,10 +27,6 @@ const SUPABASE_KEY =
   "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im10YWRiZmVuamZyZGFqaWJjZWpjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODcyMjU2NDMsImV4cCI6MjEwMjgwMTY0M30.uu84lV3fwOSLP8HCqYR_zH5eGAq3Z_wnmPyNvNtshoc";
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY)
 
-// Sends a real "flash card" styled email via the send-flash-card-email Edge
-// Function (which calls Resend server-side). Returns true on success so
-// callers can fall back to mailto: if the send fails for any reason (e.g.
-// recipient not yet allowed under Resend's unverified-domain test limits).
 async function sendFlashCardEmail(opts: { to: string; heading: string; body: string; footer?: string; accentColor?: string; subject?: string }): Promise<boolean> {
   try {
     const { data, error } = await supabase.functions.invoke("send-flash-card-email", { body: opts })
@@ -45,21 +37,13 @@ async function sendFlashCardEmail(opts: { to: string; heading: string; body: str
   }
 }
 
-// Ranchers for headings, Noto Sans for everything else — this is the actual
-// pairing used throughout the brand lookbook (confirmed from the deck's own
-// font usage, not a guess).
 const FH: React.CSSProperties = { fontFamily: "'Ranchers', cursive", fontWeight: 400, letterSpacing: "0.02em" }
 const FB: React.CSSProperties = { fontFamily: "'Noto Sans', sans-serif" }
 const FM: React.CSSProperties = { fontFamily: "monospace" }
-// Baloo 2 isn't in the brand deck's own slides, but used here as a deliberate
-// playful accent in the app chrome (header, landing page) per explicit request.
 const FN: React.CSSProperties = { fontFamily: "'Baloo 2', cursive" }
 
 const FONT_IMPORT = `@import url('https://fonts.googleapis.com/css2?family=Ranchers&family=Baloo+2:wght@400;500;600;700;800&family=Noto+Sans:wght@400;500;600;700;800;900&family=Quicksand:wght@400;500;600;700&family=Comic+Neue:wght@400;700&display=swap'); .rich-text-edit:empty::before{content:attr(data-placeholder);color:#9ca3af;pointer-events:none;} .rich-text-edit ol{list-style:decimal;margin-left:1.2em;padding-left:0.5em;} .rich-text-edit ul{list-style:disc;margin-left:1.2em;padding-left:0.5em;} .rich-text-edit li{display:list-item;}`
 
-// Narration-box font picker. "Google Sans" and literal "Comic Sans" aren't
-// licensed for free web embedding (not on Google Fonts) — Quicksand and
-// Comic Neue are the closest genuinely-available equivalents in that spirit.
 const NARRATION_FONTS = [
   { label: "Noto Sans", value: "'Noto Sans', sans-serif" },
   { label: "Baloo 2", value: "'Baloo 2', cursive" },
@@ -217,9 +201,6 @@ const DEFAULT_DEPTS: Omit<Dept, "update" | "actionItems" | "expanded" | "reporte
   { id: "procure",   name: "Procurement",                            iconKey: "🔧",   category: "departmental" },
 ]
 
-// Links a regional department card to its matching HUB attendance data, so
-// coordinators edit their region's narrative, numbers, and action items in
-// one place instead of numbers living in a separate shared section.
 const REGION_COMMUNITY_MAP: Record<string, string> = {
   "comm-kn": "Kibera North",
   "comm-ks": "Kibera South",
@@ -227,8 +208,6 @@ const REGION_COMMUNITY_MAP: Record<string, string> = {
   "comm-el": "Eastlands",
 }
 
-// Gives every non-regional department its own accent color too, so the
-// department list isn't just the four region colors plus one bland default.
 const DEPT_COLORS: Record<string, string> = {
   "comm-lead": B.red,
   "happy":     B.magenta,
@@ -241,9 +220,6 @@ const DEPT_COLORS: Record<string, string> = {
   "procure":   B.teal,
 }
 
-// Illustrated brand icons (pulled from the lookbook) in place of generic
-// emoji, minimal — only where a genuine match exists, everywhere else keeps
-// its plain iconKey emoji rather than forcing a mismatched illustration.
 const DEPT_ILLUSTRATED_ICONS: Record<string, string> = {
   "comm-lead": fistIcon,
   "happy":     sunIcon,
@@ -273,10 +249,6 @@ const SC: Record<string, { label: string; bg: string; border: string; text: stri
   protected:    { label: "Protected",    bg: "#eff6ff", border: "#3b82f6", text: "#1d4ed8", icon: "🛡️" },
 }
 
-// AI Assistant categories. Each buildPrompt receives the same context object
-// so new categories can pull whatever data they need without changing the
-// call site. "currentUser" personalizes tone/attribution; department-scoped
-// categories ("weekly", "atrisk", "followup") read the real live data.
 type AIPromptCtx = { meeting: Meeting; meetings: Meeting[]; monthLabel: string; currentUser: string }
 
 function firstNameOf(email: string): string {
@@ -342,14 +314,133 @@ const AI_CATEGORIES = [
   },
 ]
 
-// Calls the ai-assistant Edge Function (Gemini, server-side key) instead of
-// talking to a model API directly from the browser — the key never reaches
-// the client, and the function only accepts the fixed categories above.
 async function callAIAssistant(category: string, prompt: string): Promise<{ text: string; truncated: boolean }> {
   const { data, error } = await supabase.functions.invoke("ai-assistant", { body: { category, prompt } })
   if (error) throw new Error(error.message || "AI request failed")
   if (data?.error) throw new Error(data.error)
   return { text: data?.text || "", truncated: !!data?.truncated }
+}
+
+// ─── 3-WAY MERGE (co-working conflict resolution) ────────────────────────────
+// When two people edit within the same sync window, the old code let the later
+// save lose to the earlier one and then REPLACED the loser's screen with the
+// winner's data — that is exactly how a freshly-typed action item disappeared.
+// Instead of discarding, we merge: keep every change THIS device made since it
+// last synced, and accept every change the OTHER device made to anything this
+// device did not touch. Nobody's work is thrown away.
+function jsonEq(a: any, b: any): boolean {
+  return JSON.stringify(a) === JSON.stringify(b)
+}
+
+// If the local side changed a value since the shared base, keep the local edit;
+// otherwise accept whatever is on the server now.
+function pickLeaf<T>(base: T | undefined, local: T, remote: T): T {
+  if (base === undefined) return local !== undefined ? local : remote
+  return !jsonEq(local, base) ? local : remote
+}
+
+// Merge two id-keyed lists (departments, action items, hubs, messages, …)
+// honouring adds, edits and deletes from BOTH sides.
+function mergeById<T extends { id: string }>(
+  base: T[] | undefined,
+  local: T[] | undefined,
+  remote: T[] | undefined,
+  mergeItem: (b: T | undefined, l: T, r: T) => T
+): T[] {
+  const baseArr = base || [], localArr = local || [], remoteArr = remote || []
+  const baseMap = new Map(baseArr.map(x => [x.id, x]))
+  const localMap = new Map(localArr.map(x => [x.id, x]))
+  const remoteMap = new Map(remoteArr.map(x => [x.id, x]))
+  const order: string[] = []
+  const seen = new Set<string>()
+  for (const x of remoteArr) if (!seen.has(x.id)) { order.push(x.id); seen.add(x.id) }
+  for (const x of localArr) if (!seen.has(x.id)) { order.push(x.id); seen.add(x.id) }
+  const out: T[] = []
+  for (const id of order) {
+    const b = baseMap.get(id), l = localMap.get(id), r = remoteMap.get(id)
+    if (l && r) { out.push(mergeItem(b, l, r)); continue }
+    if (l && !r) {
+      // Missing on server. If local left it untouched since base, the other
+      // side deleted it → honour the delete. If local edited/added it, keep it.
+      if (b && jsonEq(l, b)) continue
+      out.push(l); continue
+    }
+    if (!l && r) {
+      // Missing locally. If base had it and remote is unchanged, local deleted
+      // it → honour. Otherwise remote added/edited it → keep.
+      if (b && jsonEq(r, b)) continue
+      out.push(r); continue
+    }
+  }
+  return out
+}
+
+function mergeActionItem(b: ActionItem | undefined, l: ActionItem, r: ActionItem): ActionItem {
+  return !jsonEq(l, b) ? l : r
+}
+
+function mergeDept(b: Dept | undefined, l: Dept, r: Dept): Dept {
+  return {
+    ...r,
+    update:    pickLeaf(b?.update, l.update, r.update),
+    sticker:   pickLeaf(b?.sticker, l.sticker, r.sticker),
+    isLocked:  pickLeaf(b?.isLocked, l.isLocked, r.isLocked),
+    lockPin:   pickLeaf(b?.lockPin, l.lockPin, r.lockPin),
+    reported:  pickLeaf(b?.reported, l.reported, r.reported),
+    updatedBy: pickLeaf(b?.updatedBy, l.updatedBy, r.updatedBy),
+    // "expanded" is a per-person view preference — keep the local choice so the
+    // server never yanks someone's panel open or closed under them.
+    expanded:  l.expanded,
+    actionItems: mergeById(b?.actionItems, l.actionItems, r.actionItems, mergeActionItem),
+  }
+}
+
+function mergeHub(b: Hub | undefined, l: Hub, r: Hub): Hub {
+  return {
+    ...r,
+    junior:         pickLeaf(b?.junior, l.junior, r.junior),
+    senior:         pickLeaf(b?.senior, l.senior, r.senior),
+    signedConsent:  pickLeaf(b?.signedConsent, l.signedConsent, r.signedConsent),
+    missingConsent: pickLeaf(b?.missingConsent, l.missingConsent, r.missingConsent),
+    newStudents:    pickLeaf(b?.newStudents, l.newStudents, r.newStudents),
+  }
+}
+
+function mergeCommunity(b: Community | undefined, l: Community, r: Community): Community {
+  return { ...r, hubs: mergeById(b?.hubs, l.hubs, r.hubs, mergeHub) }
+}
+
+function mergeMeeting(b: Meeting | undefined, l: Meeting, r: Meeting): Meeting {
+  return {
+    ...r,
+    status:               pickLeaf(b?.status, l.status, r.status),
+    date:                 pickLeaf(b?.date, l.date, r.date),
+    weekNumber:           pickLeaf(b?.weekNumber, l.weekNumber, r.weekNumber),
+    numbersLocked:        pickLeaf(b?.numbersLocked, l.numbersLocked, r.numbersLocked),
+    deleted:              pickLeaf(b?.deleted, l.deleted, r.deleted),
+    happySchoolsStudents: pickLeaf(b?.happySchoolsStudents, l.happySchoolsStudents, r.happySchoolsStudents),
+    beatMathare:          pickLeaf(b?.beatMathare, l.beatMathare, r.beatMathare),
+    beatKibera:           pickLeaf(b?.beatKibera, l.beatKibera, r.beatKibera),
+    gcCounters:           pickLeaf(b?.gcCounters, l.gcCounters, r.gcCounters),
+    staffing:             pickLeaf(b?.staffing, l.staffing, r.staffing),
+    departments:          mergeById(b?.departments, l.departments, r.departments, mergeDept),
+    impactData:           mergeById(b?.impactData, l.impactData, r.impactData, mergeCommunity),
+    // Chat and announcements are append-only from a person's view — union them
+    // by id so no message is ever lost when two people post at the same time.
+    chatMessages:  mergeById(b?.chatMessages, l.chatMessages, r.chatMessages, (bb, ll, rr) => !jsonEq(ll, bb) ? ll : rr),
+    announcements: mergeById(b?.announcements, l.announcements, r.announcements, (bb, ll, rr) => !jsonEq(ll, bb) ? ll : rr),
+  }
+}
+
+function mergeRoots(base: Root | null, local: Root, remote: Root): Root {
+  const b = base || undefined
+  return {
+    // activeMeetingId is which week YOU are looking at — keep your own so a
+    // teammate switching weeks never drags your screen to a different log.
+    activeMeetingId: local.activeMeetingId,
+    settings: pickLeaf(b?.settings, local.settings, remote.settings),
+    meetings: mergeById(b?.meetings, local.meetings, remote.meetings, mergeMeeting),
+  }
 }
 
 function createMeeting(wk: number, defs: typeof DEFAULT_DEPTS, dateStr?: string): Meeting {
@@ -378,7 +469,6 @@ function loadRoot(): Root {
     const r = localStorage.getItem(STORAGE_KEY)
     if (r) {
       const parsed = JSON.parse(r) as Root
-      // Ensure new fields exist on older saved data
       parsed.meetings = parsed.meetings.map(ensureMeetingFields)
       return parsed
     }
@@ -388,10 +478,6 @@ function loadRoot(): Root {
 }
 
 function ensureMeetingFields(m: Meeting): Meeting {
-  // Rebuilt in DEFAULT_DEPTS order every load: any department that existed
-  // when this meeting was saved keeps its real content, and any department
-  // added to the app since (like Community Leadership) gets backfilled with
-  // a fresh empty entry instead of silently missing from old logs.
   const existingDeptsById = new Map((m.departments || []).map((d: Dept) => [d.id, d]))
   const departments = DEFAULT_DEPTS.map(def => {
     const existing = existingDeptsById.get(def.id)
@@ -588,12 +674,6 @@ function RichTextEditor({ value, onChange, disabled, placeholder, draftKey }: {
   const [showColors, setShowColors] = useState(false)
   const [showHighlights, setShowHighlights] = useState(false)
   const [showFonts, setShowFonts] = useState(false)
-  // Typing here no longer autosaves on every keystroke — it only pushes up
-  // to shared state (and everyone else's screens) when Submit is clicked.
-  // This is a deliberate tradeoff, chosen specifically to close off the
-  // class of bugs where a narrative gets partially overwritten mid-typing:
-  // with nothing saved until an explicit Submit, there's no in-flight
-  // partial state for a teammate's update to collide with.
   const [isDirty, setIsDirty] = useState(false)
 
   function saveDraft(html: string) {
@@ -603,14 +683,6 @@ function RichTextEditor({ value, onChange, disabled, placeholder, draftKey }: {
     try { localStorage.removeItem(`draft_${draftKey}`) } catch { /* sandbox */ }
   }
 
-  // Only overwrite the live DOM from the incoming value when this device
-  // isn't the one currently typing here, and there's no unsubmitted draft
-  // sitting in the box — otherwise an incoming update would silently
-  // discard a draft that just hasn't been submitted yet. On first mount,
-  // an unsubmitted draft saved locally (e.g. the tab got closed or crashed
-  // before Submit was clicked) takes priority over the last submitted
-  // value — that's what actually survives an accident, not just the
-  // in-memory React state.
   useEffect(() => {
     if (!ref.current || isFocusedRef.current) return
     if (!hasCheckedDraftRef.current) {
@@ -807,8 +879,6 @@ function LockModal({ deptName, lockPin, onClose, onUnlock, onSetPin }: {
   )
 }
 
-// Reusable HUB attendance table for one region — used inside that region's
-// own department card so numbers live with the narrative and action items.
 function RegionNumbersBlock({ community, onChange, numbersLocked, triggerToast }: {
   community: Community; onChange: (c: Community) => void; numbersLocked: boolean; triggerToast: (m: string) => void
 }) {
@@ -856,9 +926,6 @@ function RegionNumbersBlock({ community, onChange, numbersLocked, triggerToast }
   )
 }
 
-// Same big-counter shell as MainCounterSection, scoped to just the four
-// community regions — a standalone card, still fed by the exact same
-// impactData the region cards above edit, so the two stay in sync.
 function ImpactSection({ impactData, numbersLocked }: {
   impactData: Community[]; numbersLocked: boolean
 }) {
@@ -959,9 +1026,6 @@ function MainCounterSection({ meeting, impactData }: {
   )
 }
 
-// Deterministic colored-initials avatar — no upload/storage needed, every
-// teammate gets a consistent, recognizable identity across the app just from
-// their email.
 const AVATAR_COLORS = [B.indigo, B.teal, B.magenta, B.red, B.green, B.gold]
 function avatarColorFor(email: string): string {
   let hash = 0
@@ -1024,8 +1088,6 @@ function TeamChatSection({ messages, onChange, currentUser, triggerToast }: {
     } else {
       const subject = encodeURIComponent(`ChezaCheza MMM: You were mentioned by ${currentUser}`)
       const body = encodeURIComponent(`${currentUser} mentioned you in the workspace chat:\n\n"${text.trim()}"\n\nOpen the MMM workspace to see the full conversation.`)
-      // window.location.href (not window.open) is what reliably hands off to
-      // the browser's registered mail handler when the automated send fails.
       window.location.href = `mailto:${mentioned.join(",")}?subject=${subject}&body=${body}`
       triggerToast("Automated send unavailable for some pings. Opening Gmail instead.")
     }
@@ -1128,9 +1190,6 @@ function AISummaryPanel({ meeting, root, currentUser, onClose }: { meeting: Meet
     }
   }
 
-  // Locking body scroll while the modal is open stops the wheel/trackpad
-  // scroll from "bleeding through" to the long page behind it — that bleed-
-  // through is exactly what made the main page scroll instead of the panel.
   useEffect(() => {
     const prevOverflow = document.body.style.overflow
     document.body.style.overflow = "hidden"
@@ -1226,9 +1285,6 @@ function DepartmentSection({ departments, onChange, currentUser, triggerToast, m
     triggerToast("Action item removed.")
   }
 
-  // Sends a real flash-card email straight to the owner's inbox via the
-  // send-flash-card-email Edge Function (Resend). Falls back to opening a
-  // pre-filled Gmail compose window only if the automated send fails.
   async function notifyOwner(item: ActionItem, deptName: string) {
     const email = item.owner.trim()
     if (!email.includes("@")) {
@@ -1256,10 +1312,8 @@ function DepartmentSection({ departments, onChange, currentUser, triggerToast, m
 
   function handleLockToggle(dept: Dept) {
     if (dept.isLocked) {
-      // Need to unlock — show modal to verify PIN
       setLockModalDept(dept)
     } else {
-      // Need to lock — if no PIN set, show modal to create one; if PIN exists, lock directly
       if (!dept.lockPin) {
         setLockModalDept(dept)
       } else {
@@ -1341,7 +1395,6 @@ function DepartmentSection({ departments, onChange, currentUser, triggerToast, m
 
               {isExpanded && (
               <>
-              {/* Inline program counters for specific departments */}
               {dept.id === "happy" && (
                 <div className="flex items-center gap-3 p-3 rounded-xl border" style={{ background: "rgba(236, 72, 153, 0.08)", borderColor: "rgba(236, 72, 153, 0.3)" }}>
                   <span className="text-2xl">⭐</span>
@@ -1682,7 +1735,6 @@ function EnhancedAdminPanel({ meeting, onUpdateMeeting, onSpawnWeek, onDeleteMee
     triggerToast(`Department marked as ${SC[sticker].label}`)
   }
 
-  // Sort meetings by week number for the calendar view
   const sortedMeetings = [...liveMeetings].sort((a, b) => b.weekNumber - a.weekNumber)
   const sortedBinned = [...binnedMeetings].sort((a, b) => b.weekNumber - a.weekNumber)
 
@@ -1730,7 +1782,6 @@ function EnhancedAdminPanel({ meeting, onUpdateMeeting, onSpawnWeek, onDeleteMee
         </div>
       </div>
 
-      {/* Attendance Numbers Lock */}
       <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-5">
         <h3 className="text-base text-gray-900 mb-3 flex items-center gap-2" style={{ ...FH }}>
           <span>{meeting.numbersLocked ? "🔒" : "🔓"}</span> Attendance Numbers Lock
@@ -1746,7 +1797,6 @@ function EnhancedAdminPanel({ meeting, onUpdateMeeting, onSpawnWeek, onDeleteMee
         </button>
       </div>
 
-      {/* Week Calendar & Delete */}
       <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-5">
         <h3 className="text-base text-gray-900 mb-3 flex items-center gap-2" style={{ ...FH }}>
           <span>📅</span> Week Logs Calendar & Management
@@ -1787,7 +1837,6 @@ function EnhancedAdminPanel({ meeting, onUpdateMeeting, onSpawnWeek, onDeleteMee
         </div>
       </div>
 
-      {/* Bin — soft-deleted logs, fully recoverable until permanently removed */}
       <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-5">
         <button onClick={() => setShowBin(s => !s)} className="w-full flex items-center justify-between text-left">
           <h3 className="text-base text-gray-900 flex items-center gap-2" style={{ ...FH }}>
@@ -1822,8 +1871,6 @@ function EnhancedAdminPanel({ meeting, onUpdateMeeting, onSpawnWeek, onDeleteMee
         )}
       </div>
 
-      {/* Save History — every save attempt is logged here, win or lose any
-          version conflict, so nothing is ever truly unrecoverable. */}
       <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-5">
         <button onClick={() => { setShowHistory(s => !s); if (!showHistory && historyEntries.length === 0) loadHistory() }} className="w-full flex items-center justify-between text-left">
           <h3 className="text-base text-gray-900 flex items-center gap-2" style={{ ...FH }}>
@@ -1917,10 +1964,6 @@ function EnhancedAdminPanel({ meeting, onUpdateMeeting, onSpawnWeek, onDeleteMee
 
 export default function ChezaChezaApp() {
   const [root, setRoot] = useState<Root | null>(null)
-  // Real Supabase Auth session — replaces the old client-side "does this
-  // string end in @chezachezadance.org" check. The database itself now only
-  // trusts a genuinely signed-in session (see the RLS policies), so this is
-  // no longer just a UI gate.
   const [session, setSession] = useState<Session | null>(null)
   const [authLoading, setAuthLoading] = useState(false)
   const [loginEmail, setLoginEmail] = useState("")
@@ -1944,33 +1987,17 @@ export default function ChezaChezaApp() {
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const supabaseReady = useRef(false)
   const isApplyingRemote = useRef(false)
-  // True from the moment a save is queued (debounce pending) until it
-  // finishes. While true, a live update from elsewhere is deferred instead
-  // of overwriting the screen mid-keystroke — this is the actual cause of
-  // "things erase while adding action items on phone": a teammate's (or
-  // your own other device's) save was landing while you were still typing,
-  // and the realtime handler applied it immediately with no protection.
   const localEditInFlight = useRef(false)
   const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null)
-  // The version we last loaded from Supabase. Saves are conditional on this
-  // number matching the database's current version — if someone else (a
-  // different tab, device, or the deployed site) saved in between, our write
-  // is rejected instead of silently overwriting their change. This is what
-  // stops one editor's work from clobbering another's with no trace.
   const versionRef = useRef(0)
+  // The last state we know both this device and the server agreed on. It is the
+  // "common ancestor" the merge compares against to tell a real local edit apart
+  // from something a teammate changed — this is what makes co-working non-destructive.
+  const baseRootRef = useRef<Root | null>(null)
 
   const showSuccessToast = useCallback((msg: string) => setToastMessage(msg), [])
   const hasReconciledAfterAuth = useRef(false)
 
-  // Pulls the shared server copy and decides whether to apply it, comparing
-  // versions rather than blindly trusting the server. What Supabase version
-  // this device last actually saw: if a box gets typed into and the page
-  // refreshes before the 600ms debounced push (or its network round trip)
-  // completes, localStorage already has the fresh text — but blindly
-  // overwriting with whatever's still on the server would silently discard
-  // that edit. This is the "boxes lose info on refresh" bug fix.
-  // RLS now requires a real signed-in session to read app_state at all, so
-  // this needs to run again once login completes, not just once on mount.
   async function reconcileWithServer(local: Root) {
     const lastKnownVersion = loadSyncedVersion()
     try {
@@ -1981,21 +2008,17 @@ export default function ChezaChezaApp() {
       } else if (data?.state?.meetings) {
         const remoteVersion = (data as any).version ?? 0
         if (remoteVersion > lastKnownVersion) {
-          // The server genuinely has something this device hasn't seen
-          // (another tab/device/teammate saved since we last synced) — safe to apply.
           const remoteState = ensureRootFields(data.state as Root)
           versionRef.current = remoteVersion
           saveSyncedVersion(remoteVersion)
+          baseRootRef.current = remoteState
           isApplyingRemote.current = true
           setRoot(remoteState)
           setSyncStatus("Connected to shared workspace")
         } else {
-          // Our local copy is at least as fresh as the server — possibly
-          // ahead of it (an edit that never finished pushing). Keep it,
-          // and nudge state once the connection is ready so the normal
-          // save effect pushes it up and self-heals the missed sync.
           versionRef.current = remoteVersion
           saveSyncedVersion(remoteVersion)
+          baseRootRef.current = ensureRootFields(data.state as Root)
           setSyncStatus("Connected to shared workspace")
           setRoot(prev => (prev ? { ...prev } : prev))
         }
@@ -2020,11 +2043,6 @@ export default function ChezaChezaApp() {
 
   useEffect(() => { latestRootRef.current = root }, [root])
 
-  // Warn before closing/navigating away with an unsubmitted narrative draft
-  // still sitting locally — this is the other half of "no accidents": the
-  // draft itself already survives a crash or accidental close (it's saved
-  // to localStorage as you type), but this catches the moment itself and
-  // gives a chance to hit Submit first instead of relying on that recovery.
   useEffect(() => {
     function hasAnyUnsavedDraft(): boolean {
       try {
@@ -2045,10 +2063,6 @@ export default function ChezaChezaApp() {
     return () => window.removeEventListener("beforeunload", handler)
   }, [])
 
-  // Native-feeling pull-to-refresh: only engages when the page is already
-  // scrolled to the very top (so it never fights normal scrolling), tracked
-  // in refs rather than state so the listeners don't get torn down and
-  // re-attached on every pixel of movement.
   useEffect(() => {
     const PULL_TRIGGER_PX = 70
     function onTouchStart(e: TouchEvent) {
@@ -2094,9 +2108,6 @@ export default function ChezaChezaApp() {
     }
   }, [])
 
-  // Re-run reconciliation the moment a real session appears (fresh login,
-  // not just a restored one) — the mount-time attempt below runs before
-  // that session exists, so RLS would have returned nothing for it.
   useEffect(() => {
     if (!session || hasReconciledAfterAuth.current) return
     hasReconciledAfterAuth.current = true
@@ -2104,52 +2115,44 @@ export default function ChezaChezaApp() {
     reconcileWithServer(loadRoot())
   }, [session])
 
-  // Initial load: show local cache instantly, then reconcile with shared backend.
-  // Realtime subscription keeps all connected machines in sync live.
   useEffect(() => {
     const local = loadRoot()
     setRoot(local)
+    baseRootRef.current = local
     reconcileWithServer(local)
 
-    // Restore the real Supabase session (persisted in localStorage by the
-    // client itself) instead of trusting a hand-typed email string, and
-    // listen for sign-in/sign-out so the whole app reacts to real auth state.
     supabase.auth.getSession().then(({ data }) => setSession(data.session))
     const { data: authListener } = supabase.auth.onAuthStateChange((_event, newSession) => {
       setSession(newSession)
     })
 
-    // Restore mood check-in
     try {
       const savedMood = sessionStorage.getItem(MOOD_KEY)
       if (savedMood) setIsCheckedIn(true)
     } catch { /* sandbox */ }
 
-    // Realtime subscription — live co-working like Google Docs
     const channel = supabase
       .channel("app_state_changes")
       .on("postgres_changes", { event: "*", schema: "public", table: "app_state" }, (payload: any) => {
         const newState = payload.new?.state
         const senderSession = payload.new?.updated_by_session
-        // Always track the true current version, even when deferring below —
-        // this is what lets a save queued while typing still succeed once it
-        // fires, instead of being rejected and triggering a second overwrite.
         if (typeof payload.new?.version === "number") { versionRef.current = payload.new.version; saveSyncedVersion(payload.new.version) }
         if (newState?.meetings && senderSession !== SESSION_ID) {
+          const incoming = ensureRootFields(newState as Root)
           if (localEditInFlight.current) {
-            // A local edit is mid-keystroke or mid-save right now — applying
-            // this would wipe it out from under you. Skip it; your own save
-            // (queued or about to fire) will land using the version we just
-            // updated above, so it isn't silently rejected either.
-            setSyncStatus("Teammate update waiting, finishing your edit first")
+            // Don't drop a teammate's update until you save — merge it in LIVE so
+            // everyone's screen stays current in real time. Your in-progress edits
+            // are preserved by the merge. Capture the base BEFORE setRoot so the
+            // updater compares against the correct common ancestor.
+            const currentBase = baseRootRef.current
+            setRoot(prev => prev ? mergeRoots(currentBase, prev, incoming) : incoming)
+            baseRootRef.current = incoming
+            setSyncStatus("Teammate's update merged in live")
             return
           }
-          // Data still syncs live in the background — that part never
-          // stops — but per explicit request, no status chatter for it.
-          // The visible "something changed" moment now only happens when
-          // someone actually clicks Submit.
           isApplyingRemote.current = true
-          setRoot(ensureRootFields(newState as Root))
+          baseRootRef.current = incoming
+          setRoot(incoming)
         }
       })
       .on("presence", { event: "sync" }, () => {
@@ -2172,58 +2175,69 @@ export default function ChezaChezaApp() {
     return () => { supabase.removeChannel(channel); authListener.subscription.unsubscribe() }
   }, [])
 
-  // Save: instant local cache + debounced push to shared backend.
+  // Save: instant local cache + debounced push to shared backend. On a version
+  // conflict we now MERGE (keep both people's work) and re-save, instead of
+  // discarding the local edit.
   useEffect(() => {
     if (!root) return
     saveRoot(root)
     if (!supabaseReady.current) return
     if (isApplyingRemote.current) { isApplyingRemote.current = false; return }
     if (saveTimer.current) clearTimeout(saveTimer.current)
-    // Set the moment ANY local edit queues a save, not just when it fires —
-    // this is what tells the realtime handler above to hold off while you're
-    // still typing, rather than overwriting mid-keystroke.
     localEditInFlight.current = true
     saveTimer.current = setTimeout(async () => {
       try {
-      // Belt-and-suspenders backup: log every attempted save to history,
-      // win or lose the version race below. Even if this edit gets rejected
-      // as a conflict, its content is never gone — it's sitting in
-      // app_state_history and can be pulled back by hand if needed.
-      supabase.from("app_state_history").insert({ state: root, version: versionRef.current, updated_by_session: SESSION_ID }).then(() => {})
+        let stateToSave: Root = root
 
-      // Conditional write: only succeeds if nobody else has saved since we
-      // last loaded (version still matches). If someone else's write beat
-      // us to it, .eq("version", ...) matches zero rows instead of blindly
-      // overwriting their work — we then pull their latest and tell the
-      // user plainly, instead of silently discarding what they had.
-      const { data, error } = await supabase
-        .from("app_state")
-        .update({ state: root, updated_by_session: SESSION_ID, version: versionRef.current + 1, updated_at: new Date().toISOString() })
-        .eq("id", 1)
-        .eq("version", versionRef.current)
-        .select("version")
+        // Belt-and-suspenders backup: log every attempted save to history so
+        // nothing is ever truly unrecoverable, win or lose the version race.
+        supabase.from("app_state_history").insert({ state: stateToSave, version: versionRef.current, updated_by_session: SESSION_ID }).then(() => {})
 
-      if (error) {
-        setSyncStatus("Save issue. Your local copy is safe")
-      } else if (data && data.length > 0) {
-        versionRef.current = data[0].version
-        saveSyncedVersion(data[0].version)
-        setSyncStatus("All changes saved to shared workspace")
-      } else {
-        // Version mismatch — someone else saved first. Pull their version
-        // rather than overwrite it, and say so clearly instead of failing silently.
-        const { data: fresh } = await supabase.from("app_state").select("state, version").eq("id", 1).maybeSingle()
-        if (fresh?.state?.meetings) {
+        let saved = false
+        for (let attempt = 0; attempt < 6 && !saved; attempt++) {
+          // Conditional write: only succeeds if nobody else has saved since we
+          // last synced (version still matches).
+          const { data, error } = await supabase
+            .from("app_state")
+            .update({ state: stateToSave, updated_by_session: SESSION_ID, version: versionRef.current + 1, updated_at: new Date().toISOString() })
+            .eq("id", 1)
+            .eq("version", versionRef.current)
+            .select("version")
+
+          if (error) {
+            setSyncStatus("Save issue. Your local copy is safe")
+            break
+          }
+          if (data && data.length > 0) {
+            versionRef.current = data[0].version
+            saveSyncedVersion(data[0].version)
+            baseRootRef.current = stateToSave
+            setSyncStatus("All changes saved to shared workspace")
+            saved = true
+            break
+          }
+
+          // Version mismatch — a teammate saved first. Instead of DISCARDING this
+          // device's edits (the old bug), pull their version and MERGE both sets
+          // of changes, then try to save the combined result again.
+          const { data: fresh } = await supabase.from("app_state").select("state, version").eq("id", 1).maybeSingle()
+          if (!fresh?.state?.meetings) {
+            setSyncStatus("Save issue. Your local copy is safe")
+            break
+          }
+          const freshState = ensureRootFields(fresh.state as Root)
+          const merged = mergeRoots(baseRootRef.current, stateToSave, freshState)
           versionRef.current = (fresh as any).version ?? versionRef.current
           saveSyncedVersion(versionRef.current)
+          baseRootRef.current = freshState
+          stateToSave = merged
+          // Show the combined result on screen without losing anything, and
+          // without re-triggering a competing save from this state change.
           isApplyingRemote.current = true
-          setRoot(ensureRootFields(fresh.state as Root))
-          showSuccessToast("Someone else saved changes just before you. Showing their latest version, redo your last edit if it's missing.")
-          setSyncStatus("Reloaded, a teammate's save arrived first")
-        } else {
-          setSyncStatus("Save issue. Your local copy is safe")
+          setRoot(merged)
+          setSyncStatus("Merged a teammate's changes — saving the combined version…")
+          // loop continues and re-attempts the conditional save of `merged`
         }
-      }
       } finally {
         localEditInFlight.current = false
       }
@@ -2241,10 +2255,6 @@ export default function ChezaChezaApp() {
     return { ...r, meetings: r.meetings.map(ensureMeetingFields) }
   }
 
-  // Real login, step 1: send a one-time code to the typed address. The
-  // database itself (via the enforce_org_email_domain trigger) rejects
-  // anything outside @chezachezadance.org, so this is a genuine identity
-  // check, not just a string comparison in the browser.
   async function handleSendCode(e: React.FormEvent) {
     e.preventDefault()
     const email = loginEmail.trim().toLowerCase()
@@ -2263,9 +2273,6 @@ export default function ChezaChezaApp() {
     }
   }
 
-  // Real login, step 2: verify the 6-digit code. Success establishes an
-  // actual Supabase session — that session is what the RLS policies check,
-  // not anything the client claims about itself.
   async function handleVerifyCode(e: React.FormEvent) {
     e.preventDefault()
     const email = loginEmail.trim().toLowerCase()
@@ -2291,9 +2298,6 @@ export default function ChezaChezaApp() {
     setRoot({ ...root, meetings: [newM, ...root.meetings], activeMeetingId: newM.id })
   }
 
-  // Deleting a week log moves it to the bin (deleted: true) instead of
-  // erasing it — the dropdown and Admin's live list both filter it out, but
-  // it's still fully recoverable from the bin until permanently deleted.
   function handleDeleteMeeting(id: string) {
     if (!root) return
     if (liveMeetings.length <= 1) { showSuccessToast("Cannot delete the last remaining week log."); return }
@@ -2316,9 +2320,6 @@ export default function ChezaChezaApp() {
     showSuccessToast("Permanently deleted.")
   }
 
-  // Restoring from history is a deliberate local edit, not an incoming
-  // remote update — it should go through the normal save path (and win the
-  // version race like any other edit) rather than being treated as a sync.
   function handleRestoreFromHistory(historicalState: Root) {
     setRoot(ensureRootFields(historicalState))
   }
